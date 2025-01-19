@@ -7,10 +7,10 @@ export default function Sidebar({ isExpanded = false, onToggle }) {
   // It just shows/hides navigation links.
   
   const menuItems = [
-    { name: "Map", route: "/private/map" },
-    { name: "Import", route: "/private/import" },
-    { name: "Onboard", route: "/private/onboard" },
-    { name: "View Reports", route: "/private/reports" }
+    { name: "Map", route: "/protected/map" },
+    { name: "Import", route: "/protected/import" },
+    { name: "Onboard", route: "/protected/onboard" },
+    { name: "View Reports", route: "/protected/reports" }
   ];
 
   function toggleSidebar() {

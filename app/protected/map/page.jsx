@@ -1,11 +1,8 @@
 import { supabase } from '@/lib/supabaseClient';
-import MapPage from './MapPage'; // We'll create a MapPage client component for the UI.
+import MapPage from './MapPage';
 
-// This is a server component that fetches the initial data and passes it to a client component.
 export default async function Page() {
   const initialZoomLevel = 5;
-
-  // Fetch initial clusters
   const { data: clusters, error: clustersError } = await supabase.rpc('get_cached_clusters', {
     p_zoom_level: initialZoomLevel,
     p_min_lat: null,
@@ -13,13 +10,11 @@ export default async function Page() {
     p_max_lat: null,
     p_max_lon: null,
   });
-
   if (clustersError) {
-    console.error(`Error fetching clusters:`, clustersError);
+    console.error('Error fetching clusters:', clustersError);
     throw new Error('Failed to fetch initial clusters.');
   }
 
-  // Fetch existing territories
   const { data: territories, error: territoriesError } = await supabase
     .from('territories')
     .select('id, name, color, geom');

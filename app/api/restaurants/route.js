@@ -37,7 +37,24 @@ export async function GET(request) {
   try {
     let query = supabaseAdmin
       .from('restaurants_with_latlng')
-      .select('id, address, user_id, latitude, longitude')
+      .select(`
+        id,
+        address,
+        address2,
+        city,
+        state,
+        phone,
+        first_name,
+        last_name,
+        latitude,
+        longitude,
+        status,
+        knocks,
+        last_knocked,
+        email,
+        updated_at,
+        user_id
+      `)
       .lte('latitude', max_lat)
       .gte('latitude', min_lat)
       .lte('longitude', max_lon)

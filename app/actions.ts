@@ -63,7 +63,7 @@ export const signInAction = async (formData: FormData) => {
     );
   }
 
-  return redirect("/protected/payscales");
+  return redirect("/protected/map");
 };
 
 // confirm session first
