@@ -22,6 +22,7 @@ export async function GET(request) {
     }
   }
 
+  // Validate bounding box params:
   if (
     isNaN(min_lat) ||
     isNaN(min_lon) ||
@@ -35,8 +36,10 @@ export async function GET(request) {
   }
 
   try {
+    // IMPORTANT CHANGE HERE: now we select from `restaurants`,
+    // and we filter by the newly added `latitude` / `longitude` columns.
     let query = supabaseAdmin
-      .from('restaurants_with_latlng')
+      .from('restaurants')
       .select(`
         id,
         address,
@@ -60,6 +63,7 @@ export async function GET(request) {
       .lte('longitude', max_lon)
       .gte('longitude', min_lon);
 
+    // If there are dynamic filters, apply them
     const allowedOperators = ['eq', 'neq', 'gt', 'lt', 'gte', 'lte', 'like', 'ilike'];
     const operatorMap = {
       '=': 'eq',
@@ -68,7 +72,7 @@ export async function GET(request) {
       '<': 'lt',
       '>=': 'gte',
       '<=': 'lte',
-      'LIKE': 'like'
+      'LIKE': 'like',
     };
 
     for (const filter of filters) {
