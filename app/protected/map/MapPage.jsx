@@ -1,4 +1,3 @@
-// app/protected/map/MapPage.jsx
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
@@ -26,18 +25,17 @@ function getStatusColor(status) {
 export default function MapPage({
   initialClusters = [],
   initialZoomLevel = 5,
-  initialTerritories = []
+  initialTerritories = [],
 }) {
   const supabase = createClient();
   const mapRef = useRef(null);
   const map = useRef(null);
 
-  // Keep references to cluster (legacy) and individual (advanced) markers
+  // cluster and individual markers
   const clusterMarkers = useRef([]);
   const individualMarkers = useRef([]);
-  const territoryPolygons = useRef([]);
 
-  const infoWindowRef = useRef(null); // for showing marker details
+  const infoWindowRef = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const hasLoadedIndividuals = useRef(false);
@@ -48,26 +46,24 @@ export default function MapPage({
   const [showAssign, setShowAssign] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
 
-  // Clear an array of markers (both legacy and advanced)
+  // For "Assign Leads" polygon drawing
+  const [isAssigning, setIsAssigning] = useState(false);
+  const drawingManagerRef = useRef(null);
+  const [assignPolygon, setAssignPolygon] = useState(null);
+
+  // Clear an array of markers
   const clearMarkers = (ref) => {
     ref.current.forEach((m) => {
       if (m instanceof google.maps.Marker) {
-        // Legacy marker
         m.setMap(null);
       } else if (m.map) {
-        // Advanced marker
         m.map = null;
       }
     });
     ref.current = [];
   };
 
-  const clearPolygons = () => {
-    territoryPolygons.current.forEach((p) => p.setMap(null));
-    territoryPolygons.current = [];
-  };
-
-  // Simplify zoom levels -> cluster zoom levels
+  // Simplify zoom -> cluster zoom
   const getMappedZoom = (z) => {
     if (z >= 12) return 10;
     if (z >= 11) return 9;
@@ -77,26 +73,7 @@ export default function MapPage({
     return Math.round(z);
   };
 
-  // Draw polygons for each territory
-  const drawTerritories = (territories) => {
-    clearPolygons();
-    (territories || []).forEach((t) => {
-      if (!t.geom || !t.geom.coordinates) return;
-      const coords = t.geom.coordinates[0].map(([lng, lat]) => ({ lat, lng }));
-      const polygon = new google.maps.Polygon({
-        paths: coords,
-        strokeColor: t.color || "#FF0000",
-        strokeOpacity: 0.8,
-        strokeWeight: 2,
-        fillColor: t.color || "#FF0000",
-        fillOpacity: 0.35,
-        map: map.current
-      });
-      territoryPolygons.current.push(polygon);
-    });
-  };
-
-  // Fetch cluster points (kept as legacy google.maps.Marker with circle icon)
+  // fetch cluster points
   const fetchClusters = async (z) => {
     const currentFetchId = ++fetchCounter.current;
     if (!map.current) return;
@@ -118,7 +95,7 @@ export default function MapPage({
         p_min_lat: min_lat,
         p_min_lon: min_lon,
         p_max_lat: max_lat,
-        p_max_lon: max_lon
+        p_max_lon: max_lon,
       });
       if (error) throw error;
       if (currentFetchId !== fetchCounter.current) return;
@@ -129,13 +106,10 @@ export default function MapPage({
         const lng = parseFloat(c.longitude);
         if (isNaN(lat) || isNaN(lng)) return;
 
-        // Legacy cluster marker as a circle
-        const scale = (() => {
-          const minScale = 20;
-          const maxScale = 50;
-          const normalized = Math.min(1, Math.max(0, (c.count - 1) / 999));
-          return minScale + normalized * (maxScale - minScale);
-        })();
+        const minScale = 20;
+        const maxScale = 50;
+        const normalized = Math.min(1, Math.max(0, (c.count - 1) / 999));
+        const scale = minScale + normalized * (maxScale - minScale);
 
         const marker = new google.maps.Marker({
           position: { lat, lng },
@@ -144,7 +118,7 @@ export default function MapPage({
             text: String(c.count),
             color: "white",
             fontSize: "12px",
-            fontWeight: "bold"
+            fontWeight: "bold",
           },
           icon: {
             path: google.maps.SymbolPath.CIRCLE,
@@ -152,8 +126,8 @@ export default function MapPage({
             fillOpacity: 0.6,
             scale,
             strokeColor: "#fff",
-            strokeWeight: 1
-          }
+            strokeWeight: 1,
+          },
         });
         clusterMarkers.current.push(marker);
       });
@@ -164,7 +138,7 @@ export default function MapPage({
     }
   };
 
-  // Fetch individual points, show advanced markers with PinElement
+  // fetch individual restaurants
   const fetchIndividuals = async () => {
     const currentFetchId = ++fetchCounter.current;
     if (!map.current) return;
@@ -172,7 +146,7 @@ export default function MapPage({
     const bounds = map.current.getBounds();
     if (!bounds) return;
 
-    // Expand bounding box
+    // expand bounding box
     const sw = bounds.getSouthWest();
     const ne = bounds.getNorthEast();
     const dLat = ne.lat() - sw.lat();
@@ -192,17 +166,14 @@ export default function MapPage({
       if (!res.ok) throw new Error("Failed to fetch individuals");
       const { restaurants } = await res.json();
 
-      console.log("Fetched restaurants:", restaurants);
       if (currentFetchId !== fetchCounter.current) return;
 
       clearMarkers(individualMarkers);
 
-      // Initialize InfoWindow if not already
       if (!infoWindowRef.current) {
         infoWindowRef.current = new google.maps.InfoWindow();
       }
 
-      // Import advanced marker library
       const { AdvancedMarkerElement, PinElement } =
         await google.maps.importLibrary("marker");
 
@@ -210,10 +181,8 @@ export default function MapPage({
         const lat = parseFloat(r.latitude);
         const lng = parseFloat(r.longitude);
         if (!isNaN(lat) && !isNaN(lng)) {
-          const numericStatus = typeof r.status === "string"
-            ? parseInt(r.status, 10)
-            : r.status;
-
+          const numericStatus =
+            typeof r.status === "string" ? parseInt(r.status, 10) : r.status;
           const color = getStatusColor(numericStatus);
 
           // Create a pin with custom color
@@ -221,21 +190,17 @@ export default function MapPage({
             background: color,
             borderColor: "transparent",
             glyphColor: "#ffffff",
-            scale: 0.9
+            scale: 0.9,
           });
 
-          // Create advanced marker
           const advMarker = new AdvancedMarkerElement({
             map: map.current,
             position: { lat, lng },
             title: `Status: ${numericStatus}`,
-            content: pin.element
+            content: pin.element,
           });
 
-          // Make the cursor a pointer on hover
           advMarker.element.style.cursor = "pointer";
-
-          // Grow slightly on hover
           advMarker.element.addEventListener("mouseover", () => {
             pin.scale = 1.1;
           });
@@ -243,11 +208,9 @@ export default function MapPage({
             pin.scale = 0.9;
           });
 
-          // On click, show a custom InfoWindow
           advMarker.element.addEventListener("click", () => {
-            // Build a dark-styled popup with more details
             const detailsHtml = `
-              <div style="min-width:220px; color: #fff; background: #222; padding: 8px; border-radius: 4px;">
+              <div style="min-width:220px; color:#fff; background:#222; padding:8px; border-radius:4px;">
                 <h3 style="margin:0; font-size:1rem; color:#ffd700;">
                   ${r.first_name || ""} ${r.last_name || ""}
                 </h3>
@@ -270,13 +233,14 @@ export default function MapPage({
             infoWindowRef.current.setContent(detailsHtml);
             infoWindowRef.current.open({
               anchor: advMarker,
-              map: map.current
+              map: map.current,
             });
           });
 
           individualMarkers.current.push(advMarker);
         }
       });
+
       hasLoadedIndividuals.current = true;
     } catch (e) {
       if (currentFetchId === fetchCounter.current) setError(e.message);
@@ -285,10 +249,10 @@ export default function MapPage({
     }
   };
 
+  // map init
   useEffect(() => {
     (async () => {
       try {
-        // Load Maps JS with advanced marker library
         if (!window.google) {
           await new Promise((resolve, reject) => {
             const s = document.createElement("script");
@@ -301,7 +265,6 @@ export default function MapPage({
           });
         }
 
-        // Initialize the map with an ID to use advanced markers (replace with your real map ID)
         map.current = new google.maps.Map(mapRef.current, {
           center: { lat: 39.5, lng: -98.35 },
           zoom: initialZoomLevel,
@@ -309,16 +272,15 @@ export default function MapPage({
           streetViewControl: false,
           fullscreenControl: false,
           gestureHandling: "greedy",
-          mapId: "YOUR_MAP_ID"
+          mapId: "YOUR_MAP_ID",
         });
 
-        // On first load
+        // first load
         google.maps.event.addListenerOnce(map.current, "idle", () => {
           fetchClusters(getMappedZoom(map.current.getZoom()));
-          drawTerritories(initialTerritories);
         });
 
-        // On zoom change
+        // handle zoom changes
         map.current.addListener("zoom_changed", () => {
           const z = map.current.getZoom();
           if (hasLoadedIndividuals.current && z > ZOOM_THRESHOLD) return;
@@ -338,7 +300,59 @@ export default function MapPage({
         setError("Google Maps failed to load.");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // handle toggling the "assign leads" mode
+  function handleAssignLeads() {
+    setShowAssign(!showAssign);
+    setIsAssigning(!showAssign);
+  }
+
+  // set up or tear down drawing manager for assigning leads
+  useEffect(() => {
+    if (!map.current) return;
+    if (isAssigning) {
+      if (!google?.maps?.drawing) return;
+      drawingManagerRef.current = new google.maps.drawing.DrawingManager({
+        drawingMode: google.maps.drawing.OverlayType.POLYGON,
+        drawingControl: false,
+        polygonOptions: {
+          fillColor: "#FF9800",
+          fillOpacity: 0.35,
+          strokeColor: "#FF9800",
+          strokeWeight: 2,
+          editable: true,
+        },
+      });
+      drawingManagerRef.current.setMap(map.current);
+
+      google.maps.event.addListener(
+        drawingManagerRef.current,
+        "overlaycomplete",
+        (e) => {
+          if (e.type === google.maps.drawing.OverlayType.POLYGON) {
+            if (assignPolygon) {
+              assignPolygon.setMap(null);
+            }
+            setAssignPolygon(e.overlay);
+            drawingManagerRef.current.setDrawingMode(null);
+          }
+        }
+      );
+    } else {
+      // Turn off polygon mode
+      if (drawingManagerRef.current) {
+        drawingManagerRef.current.setMap(null);
+        drawingManagerRef.current = null;
+      }
+      // Optionally remove leftover polygon
+      if (assignPolygon) {
+        assignPolygon.setMap(null);
+        setAssignPolygon(null);
+      }
+    }
+  }, [isAssigning, assignPolygon]);
 
   return (
     <div className="relative w-screen h-screen">
@@ -362,16 +376,23 @@ export default function MapPage({
         map={map.current}
       />
       <FilterModal isExpanded={showFilter} onToggle={setShowFilter} />
+
       <AssignLeadsModal
         isExpanded={showAssign}
         onToggle={setShowAssign}
-        polygon={null}
+        polygon={assignPolygon}
+        onAssignSuccess={() => {
+          console.log("Assign success!");
+          // Turn off polygon mode so the cursor goes back to normal
+          setIsAssigning(false);
+        }}
       />
+
       <Toolbar
         onPan={() => setShowSidebar(!showSidebar)}
         onFilterLeads={() => setShowFilter(!showFilter)}
         onToggleTerritoryMode={() => setShowTerritory(!showTerritory)}
-        onAssignLeads={() => setShowAssign(!showAssign)}
+        onAssignLeads={handleAssignLeads}
         onCreateLead={() => {}}
       />
     </div>

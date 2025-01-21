@@ -9,10 +9,15 @@ const DEFAULT_COLOR = "#FF0000";
 
 const supabaseAnon = createSupabaseAnonClient(
   "https://bdjxxtvhbfqgnwbuhzfo.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkanh4dHZoYmZxZ253YnVoemZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ1NTg2NjUsImV4cCI6MjA1MDEzNDY2NX0.n3lB7-JQAkrV06-RJ8vBTb019tWElhEw-iGis4Qla5U"
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 );
 
-export default function Territory({ isExpanded = true, territories = [], onToggle, map }) {
+export default function Territory({
+  isExpanded = true,
+  territories = [],
+  onToggle,
+  map,
+}) {
   const supabase = createSupabaseClient();
 
   const [displayTerritories, setDisplayTerritories] = useState([]);
@@ -31,21 +36,30 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
   const drawingManagerRef = useRef(null);
   const drawnPolygonRef = useRef(null);
 
+  // Keep local copy of the territories
   useEffect(() => setDisplayTerritories(territories), [territories]);
 
-  useEffect(() => {
-    if (drawingManagerRef.current) {
-      drawingManagerRef.current.setOptions({ polygonOptions: polygonOptions(color, true) });
-    }
-    if (drawnPolygonRef.current) {
-      drawnPolygonRef.current.setOptions({ fillColor: color, strokeColor: color });
-    }
-  }, [color]);
-
+  // Redraw territories if they change, or if we stop adding
   useEffect(() => {
     if (map && !isAdding) drawAllTerritories();
   }, [displayTerritories, isAdding, map]);
 
+  // Update drawn polygon's color if `color` changes
+  useEffect(() => {
+    if (drawingManagerRef.current) {
+      drawingManagerRef.current.setOptions({
+        polygonOptions: polygonOptions(color, true),
+      });
+    }
+    if (drawnPolygonRef.current) {
+      drawnPolygonRef.current.setOptions({
+        fillColor: color,
+        strokeColor: color,
+      });
+    }
+  }, [color]);
+
+  // Manage when we’re in "draw" mode
   useEffect(() => {
     if (isAdding && addMode === "draw") startDrawingMode();
     else if (!isAdding) stopDrawingMode(false);
@@ -58,12 +72,12 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
       strokeColor: c,
       strokeOpacity: 0.8,
       strokeWeight: 2,
-      editable
+      editable,
     };
   }
 
   function clearMarkers() {
-    individualMarkersRef.current.forEach(m => m.setMap(null));
+    individualMarkersRef.current.forEach((m) => m.setMap(null));
     individualMarkersRef.current = [];
   }
 
@@ -75,14 +89,17 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
   }
 
   function clearTerritoryPolygons() {
-    territoryPolygonsRef.current.forEach(p => p.setMap(null));
+    territoryPolygonsRef.current.forEach((p) => p.setMap(null));
     territoryPolygonsRef.current = [];
   }
 
   function drawAllTerritories() {
     if (!map) return;
     clearTerritoryPolygons();
-    displayTerritories.forEach(t => {
+
+    const territoryClickInfoWindow = new google.maps.InfoWindow();
+
+    displayTerritories.forEach((t) => {
       if (!t.geom || !t.geom.coordinates) return;
       const coords = t.geom.coordinates[0].map(([lng, lat]) => ({ lat, lng }));
       const polygon = new google.maps.Polygon({
@@ -93,12 +110,77 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
         strokeOpacity: 0.8,
         strokeWeight: 2,
         editable: false,
-        map
+        map,
       });
+
+      // On polygon click: show popup immediately, then fetch total
+      polygon.addListener("click", (event) => {
+        territoryClickInfoWindow.close();
+
+        // 1) Show the territory name + spinner right away
+        const instantHtml = `
+          <div style="min-width:200px;padding:8px;background:#fff;color:#000;border-radius:6px;">
+            <div style="font-weight:bold;margin-bottom:6px;">${t.name}</div>
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+              <div style="
+                width:24px;
+                height:24px;
+                border:3px solid #999;
+                border-top-color:transparent;
+                border-radius:50%;
+                animation:spin 1s linear infinite;
+                ">
+              </div>
+              <p style="font-size:0.8rem;margin-top:6px;">Loading...</p>
+            </div>
+          </div>
+        `;
+        territoryClickInfoWindow.setContent(instantHtml);
+        territoryClickInfoWindow.setPosition(event.latLng);
+        territoryClickInfoWindow.open({ map });
+
+        // 2) Kick off fetch in background
+        (async () => {
+          try {
+            const res = await fetch("/api/territoryStats", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ coordinates: coords }),
+            });
+            let total = 0;
+            if (res.ok) {
+              const json = await res.json();
+              total = json.total || 0;
+            }
+
+            // 3) Once data arrives, update the popup content
+            const finalHtml = `
+              <div style="min-width:200px;padding:8px;background:#fff;color:#000;border-radius:6px;">
+                <div style="font-weight:bold;margin-bottom:6px;">${t.name}</div>
+                <div style="margin-bottom:8px;">
+                  Total Restaurants: ${total}
+                </div>
+              </div>
+            `;
+            // Update InfoWindow
+            territoryClickInfoWindow.setContent(finalHtml);
+          } catch (err) {
+            console.error("Error fetching territory stats:", err);
+            territoryClickInfoWindow.setContent(`
+              <div style="min-width:200px;padding:8px;background:#fff;color:#000;border-radius:6px;">
+                <div style="font-weight:bold;margin-bottom:6px;">${t.name}</div>
+                <div style="color:red;">Failed to load data.</div>
+              </div>
+            `);
+          }
+        })();
+      });
+
       territoryPolygonsRef.current.push(polygon);
     });
   }
 
+  // Possibly fetch individual markers if zoom is high enough
   async function fetchIndividualsForCurrentBounds(expansionFactor = 3) {
     if (!map) return;
     const bounds = map.getBounds();
@@ -113,33 +195,45 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
     const maxLon = ne.lng() + dLng * (expansionFactor - 1);
 
     try {
-      const res = await fetch(`/api/restaurants?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}`);
+      const res = await fetch(
+        `/api/restaurants?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}`
+      );
       if (!res.ok) throw new Error("Failed to fetch individuals");
       const { restaurants } = await res.json();
       clearMarkers();
-      (restaurants || []).forEach(r => {
-        const lat = parseFloat(r.latitude), lng = parseFloat(r.longitude);
+      (restaurants || []).forEach((r) => {
+        const lat = parseFloat(r.latitude);
+        const lng = parseFloat(r.longitude);
         if (!isNaN(lat) && !isNaN(lng)) {
-          individualMarkersRef.current.push(new google.maps.Marker({ position: { lat, lng }, map }));
+          individualMarkersRef.current.push(
+            new google.maps.Marker({ position: { lat, lng }, map })
+          );
         }
       });
       removeZoomListener();
-      zoomListenerRef.current = google.maps.event.addListener(map, "zoom_changed", () => {
-        if (map.getZoom() < ZOOM_THRESHOLD) {
-          clearMarkers();
-          removeZoomListener();
+      zoomListenerRef.current = google.maps.event.addListener(
+        map,
+        "zoom_changed",
+        () => {
+          if (map.getZoom() < ZOOM_THRESHOLD) {
+            clearMarkers();
+            removeZoomListener();
+          }
         }
-      });
+      );
     } catch (err) {
       console.error("Error fetching individuals:", err);
     }
   }
 
+  // Clicking territory name in sidebar => zoom to polygon
   function handleTerritoryClick(territory) {
     setSelectedTerritory(territory);
     if (!map || !territory.geom || !territory.geom.coordinates) return;
     const bounds = new google.maps.LatLngBounds();
-    territory.geom.coordinates[0].forEach(([lng, lat]) => bounds.extend({ lat, lng }));
+    territory.geom.coordinates[0].forEach(([lng, lat]) =>
+      bounds.extend({ lat, lng })
+    );
     map.fitBounds(bounds);
 
     google.maps.event.addListenerOnce(map, "idle", async () => {
@@ -149,6 +243,7 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
     });
   }
 
+  // Cancel territory creation
   function cancelAdd() {
     setIsAdding(false);
     setPolygonCoordinates([]);
@@ -158,6 +253,7 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
     stopDrawingMode(true);
   }
 
+  // Save new territory to DB
   async function saveNewTerritory() {
     if (!territoryName.trim()) {
       alert("Please provide a territory name.");
@@ -173,36 +269,45 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
       id: newTempId,
       name: territoryName,
       color,
-      geom: { type: 'Polygon', coordinates: [polygonCoordinates.map(coord => [coord.lng, coord.lat])] }
+      geom: {
+        type: "Polygon",
+        coordinates: [polygonCoordinates.map((coord) => [coord.lng, coord.lat])],
+      },
     };
-    setDisplayTerritories(prev => [...prev, newTerritory]);
+    setDisplayTerritories((prev) => [...prev, newTerritory]);
 
     try {
       const body = {
         name: territoryName,
         color,
-        coordinates: polygonCoordinates
+        coordinates: polygonCoordinates,
       };
-      if (addMode === "zip" && zipCodeQuery.trim()) body.zipCode = zipCodeQuery.trim();
+      if (addMode === "zip" && zipCodeQuery.trim()) {
+        body.zipCode = zipCodeQuery.trim();
+      }
 
       const res = await fetch("/api/saveTerritory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
         const data = await res.json();
         console.error("Failed to save territory:", data);
         alert("Failed to save territory.");
-        setDisplayTerritories(prev => prev.filter(t => t.id !== newTempId));
+        setDisplayTerritories((prev) =>
+          prev.filter((t) => t.id !== newTempId)
+        );
         return;
       }
 
       const { data } = await res.json();
       if (data && data.length > 0) {
         const finalTerritory = data[0];
-        setDisplayTerritories(prev => prev.map(t => t.id === newTempId ? finalTerritory : t));
+        setDisplayTerritories((prev) =>
+          prev.map((t) => (t.id === newTempId ? finalTerritory : t))
+        );
         setSelectedTerritory(finalTerritory);
         if (drawnPolygonRef.current) {
           drawnPolygonRef.current.setMap(null);
@@ -220,33 +325,40 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
     }
   }
 
+  // Start polygon drawing
   function startDrawingMode() {
     if (!map || !google?.maps?.drawing) return;
     stopDrawingMode(true);
     drawingManagerRef.current = new google.maps.drawing.DrawingManager({
       drawingMode: google.maps.drawing.OverlayType.POLYGON,
       drawingControl: false,
-      polygonOptions: polygonOptions(color, true)
+      polygonOptions: polygonOptions(color, true),
     });
     drawingManagerRef.current.setMap(map);
-    google.maps.event.addListener(drawingManagerRef.current, 'overlaycomplete', (e) => {
-      if (e.type === google.maps.drawing.OverlayType.POLYGON) {
-        if (drawnPolygonRef.current) drawnPolygonRef.current.setMap(null);
-        drawnPolygonRef.current = e.overlay;
-        drawingManagerRef.current.setDrawingMode(null);
-        updatePolygonCoordinates();
-        attachPolygonListeners(drawnPolygonRef.current);
+    google.maps.event.addListener(
+      drawingManagerRef.current,
+      "overlaycomplete",
+      (e) => {
+        if (e.type === google.maps.drawing.OverlayType.POLYGON) {
+          if (drawnPolygonRef.current) drawnPolygonRef.current.setMap(null);
+          drawnPolygonRef.current = e.overlay;
+          drawingManagerRef.current.setDrawingMode(null);
+          updatePolygonCoordinates();
+          attachPolygonListeners(drawnPolygonRef.current);
+        }
       }
-    });
+    );
   }
 
+  // Listen for changes to the drawn polygon so we can update coords
   function attachPolygonListeners(polygon) {
     const path = polygon.getPath();
-    google.maps.event.addListener(path, 'set_at', updatePolygonCoordinates);
-    google.maps.event.addListener(path, 'insert_at', updatePolygonCoordinates);
-    google.maps.event.addListener(path, 'remove_at', updatePolygonCoordinates);
+    google.maps.event.addListener(path, "set_at", updatePolygonCoordinates);
+    google.maps.event.addListener(path, "insert_at", updatePolygonCoordinates);
+    google.maps.event.addListener(path, "remove_at", updatePolygonCoordinates);
   }
 
+  // Stop polygon drawing
   function stopDrawingMode(removePolygon) {
     if (drawingManagerRef.current) {
       drawingManagerRef.current.setMap(null);
@@ -258,6 +370,7 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
     }
   }
 
+  // Capture new polygon coords
   function updatePolygonCoordinates() {
     if (!drawnPolygonRef.current) return;
     const path = drawnPolygonRef.current.getPath();
@@ -269,10 +382,10 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
     setPolygonCoordinates(coords);
   }
 
-  // Parse the WKT POLYGON string into an array of {lat, lng}
+  // For "zip" mode: look up geometry from your "zctas" table
   function parseWktPolygon(wkt) {
-    const inner = wkt.replace(/^POLYGON\s*\(\(|\)\)$/g, '');
-    return inner.split(',').map(pair => {
+    const inner = wkt.replace(/^POLYGON\s*\(\(|\)\)$/g, "");
+    return inner.split(",").map((pair) => {
       const [lng, lat] = pair.trim().split(/\s+/).map(Number);
       return { lat, lng };
     });
@@ -286,9 +399,9 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
 
     try {
       const { data, error } = await supabaseAnon
-        .from('zctas')
-        .select('*')
-        .eq('ZCTA5CE20', zipCodeQuery.trim())
+        .from("zctas")
+        .select("*")
+        .eq("ZCTA5CE20", zipCodeQuery.trim())
         .single();
 
       if (error || !data) {
@@ -314,7 +427,7 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
         drawnPolygonRef.current = new google.maps.Polygon({
           ...polygonOptions(color, true),
           paths: poly,
-          map
+          map,
         });
         attachPolygonListeners(drawnPolygonRef.current);
       }
@@ -324,6 +437,7 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
     }
   }
 
+  // Filter by territory name
   const filteredTerritories = displayTerritories.filter((t) =>
     t.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -345,8 +459,15 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
                 ? "Add New Territory"
                 : "Territory Management"}
             </h2>
-            <button onClick={() => onToggle && onToggle(false)} className="p-1 hover:bg-gray-700 rounded">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="currentColor">
+            <button
+              onClick={() => onToggle && onToggle(false)}
+              className="p-1 hover:bg-gray-700 rounded"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                fill="currentColor"
+              >
                 <path
                   fillRule="evenodd"
                   d="M10 8.586L15.95 2.636l1.414 1.414L11.414 10l5.95 5.95-1.414 1.414L10 11.414l-5.95 5.95-1.414-1.414L8.586 10 2.636 4.05l1.414-1.414L10 8.586z"
@@ -359,15 +480,32 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
           <div className="p-4 flex-1 overflow-y-auto scroll-container">
             {selectedTerritory ? (
               <div className="space-y-4">
-                <button onClick={() => setSelectedTerritory(null)} className="flex items-center text-gray-300 hover:text-white">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                <button
+                  onClick={() => setSelectedTerritory(null)}
+                  className="flex items-center text-gray-300 hover:text-white"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5 mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M15 19l-7-7 7-7"
+                    />
                   </svg>
                   Back to List
                 </button>
                 <div>
-                  <h3 className="text-md font-medium">Details for {selectedTerritory.name}</h3>
-                  <p className="text-sm text-gray-400">Stats and other info about this territory.</p>
+                  <h3 className="text-md font-medium">
+                    Details for {selectedTerritory.name}
+                  </h3>
+                  <p className="text-sm text-gray-400">
+                    Stats and other info about this territory.
+                  </p>
                 </div>
               </div>
             ) : isAdding ? (
@@ -376,19 +514,29 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
                 <div className="flex space-x-2">
                   <button
                     onClick={() => setAddMode("draw")}
-                    className={`px-3 py-1 rounded text-white ${addMode === "draw" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"}`}
+                    className={`px-3 py-1 rounded text-white ${
+                      addMode === "draw"
+                        ? "bg-blue-600"
+                        : "bg-gray-700 hover:bg-gray-600"
+                    }`}
                   >
                     Draw
                   </button>
                   <button
                     onClick={() => setAddMode("zip")}
-                    className={`px-3 py-1 rounded text-white ${addMode === "zip" ? "bg-blue-600" : "bg-gray-700 hover:bg-gray-600"}`}
+                    className={`px-3 py-1 rounded text-white ${
+                      addMode === "zip"
+                        ? "bg-blue-600"
+                        : "bg-gray-700 hover:bg-gray-600"
+                    }`}
                   >
                     Zip Code
                   </button>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300">Territory Name</label>
+                  <label className="block text-sm font-medium text-gray-300">
+                    Territory Name
+                  </label>
                   <input
                     type="text"
                     value={territoryName}
@@ -398,7 +546,9 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300">Territory Color</label>
+                  <label className="block text-sm font-medium text-gray-300">
+                    Territory Color
+                  </label>
                   <input
                     type="color"
                     value={color}
@@ -409,7 +559,9 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
 
                 {addMode === "zip" && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-300">Zip Code</label>
+                    <label className="block text-sm font-medium text-gray-300">
+                      Zip Code
+                    </label>
                     <div className="flex space-x-2 mt-1">
                       <input
                         type="text"
@@ -418,7 +570,10 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
                         className="flex-1 px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-md"
                         placeholder="Enter zip code"
                       />
-                      <button onClick={handleZipSearch} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-500">
+                      <button
+                        onClick={handleZipSearch}
+                        className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-500"
+                      >
                         Search
                       </button>
                     </div>
@@ -426,10 +581,16 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
                 )}
 
                 <div className="flex justify-end space-x-2">
-                  <button onClick={cancelAdd} className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600">
+                  <button
+                    onClick={cancelAdd}
+                    className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
+                  >
                     Cancel
                   </button>
-                  <button onClick={saveNewTerritory} className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-500">
+                  <button
+                    onClick={saveNewTerritory}
+                    className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-500"
+                  >
                     Save
                   </button>
                 </div>
@@ -475,7 +636,10 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
                         }}
                       >
                         <div className="flex items-center">
-                          <span className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: territory.color }}></span>
+                          <span
+                            className="w-4 h-4 rounded-full mr-2"
+                            style={{ backgroundColor: territory.color }}
+                          ></span>
                           <span>{territory.name}</span>
                         </div>
                       </li>
@@ -489,14 +653,29 @@ export default function Territory({ isExpanded = true, territories = [], onToggl
           </div>
         </>
       ) : (
-        <div className="flex items-center p-4 hover:bg-gray-800 cursor-pointer" onClick={() => onToggle && onToggle(true)}>
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" stroke="currentColor">
+        <div
+          className="flex items-center p-4 hover:bg-gray-800 cursor-pointer"
+          onClick={() => onToggle && onToggle(true)}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+          >
             <path d="M..." />
           </svg>
           <span className="ml-2 text-sm">Territory</span>
         </div>
       )}
+
+      {/* A quick inline style for the spinner animation */}
       <style jsx>{`
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
         .scroll-container::-webkit-scrollbar {
           width: 6px;
         }

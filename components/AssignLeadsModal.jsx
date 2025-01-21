@@ -10,16 +10,50 @@ export default function AssignLeadsModal({
   onAssignSuccess
 }) {
   const supabase = createClient();
+
   const [users, setUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignError, setAssignError] = useState(null);
   const [assignSuccess, setAssignSuccess] = useState(null);
 
+  // Stats for the polygon
+  const [pinCount, setPinCount] = useState(0);
+  const [userCounts, setUserCounts] = useState([]); 
+  // userCounts will be an array of: { the_user_id, first_name, last_name, total }
+
+  // Fetch the list of possible users (for the dropdown)
   useEffect(() => {
     fetchUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Whenever 'polygon' changes, fetch stats for that polygon
+  useEffect(() => {
+    if (!polygon) {
+      setPinCount(0);
+      setUserCounts([]);
+      return;
+    }
+    const path = polygon.getPath();
+    if (!path || path.getLength() < 3) {
+      setPinCount(0);
+      setUserCounts([]);
+      return;
+    }
+
+    // Convert polygon to standard GeoJSON
+    const coords = [];
+    for (let i = 0; i < path.getLength(); i++) {
+      const latLng = path.getAt(i);
+      coords.push([latLng.lng(), latLng.lat()]);
+    }
+    // Close the polygon
+    coords.push([...coords[0]]);
+
+    const polygonGeoJSON = { type: "Polygon", coordinates: [coords] };
+    fetchPolygonStats(polygonGeoJSON);
+  }, [polygon]);
 
   async function fetchUsers() {
     try {
@@ -36,6 +70,27 @@ export default function AssignLeadsModal({
     }
   }
 
+  async function fetchPolygonStats(polygonGeoJSON) {
+    try {
+      setAssignError(null);
+      const { data, error } = await supabase.rpc(
+        "get_restaurant_counts_by_polygon",
+        { p_polygon: polygonGeoJSON }
+      );
+      if (error) throw error;
+      // data => [{ the_user_id, first_name, last_name, total }, ...]
+      setUserCounts(data || []);
+      // Sum the total field for overall pin count
+      const sum = (data || []).reduce((acc, row) => acc + row.total, 0);
+      setPinCount(sum);
+    } catch (err) {
+      console.error("Error fetching polygon stats:", err);
+      setAssignError("Failed to load polygon stats.");
+      setPinCount(0);
+      setUserCounts([]);
+    }
+  }
+
   function toggleModal() {
     onToggle && onToggle(false);
   }
@@ -45,9 +100,13 @@ export default function AssignLeadsModal({
       setAssignError("Please select a user to assign.");
       return;
     }
-
     if (!polygon) {
-      setAssignError("No polygon defined.");
+      setAssignError("No polygon drawn. Please draw one first.");
+      return;
+    }
+    const path = polygon.getPath();
+    if (!path || path.getLength() < 3) {
+      setAssignError("Polygon is not complete—needs at least 3 points.");
       return;
     }
 
@@ -56,34 +115,25 @@ export default function AssignLeadsModal({
     setAssignSuccess(null);
 
     try {
-      const path = polygon
-        .getPath()
-        .getArray()
-        .map((latlng) => ({
-          latitude: parseFloat(latlng.lat().toFixed(7)),
-          longitude: parseFloat(latlng.lng().toFixed(7))
-        }));
-
-      // Ensure polygon is closed
+      // Convert path to lat/lng array
+      const coords = path.getArray().map((latlng) => ({
+        latitude: parseFloat(latlng.lat().toFixed(7)),
+        longitude: parseFloat(latlng.lng().toFixed(7))
+      }));
+      // Force close
       if (
-        path.length < 4 ||
-        path[0].latitude !== path[path.length - 1].latitude ||
-        path[0].longitude !== path[path.length - 1].longitude
+        coords[0].latitude !== coords[coords.length - 1].latitude ||
+        coords[0].longitude !== coords[coords.length - 1].longitude
       ) {
-        path.push({ ...path[0] });
-      }
-
-      for (let point of path) {
-        if (isNaN(point.latitude) || isNaN(point.longitude)) {
-          throw new Error("Invalid coordinate detected in the polygon.");
-        }
+        coords.push({ ...coords[0] });
       }
 
       const polygonGeoJSON = {
         type: "Polygon",
-        coordinates: [path.map((point) => [point.longitude, point.latitude])]
+        coordinates: [coords.map((pt) => [pt.longitude, pt.latitude])]
       };
 
+      // RPC to assign leads
       const { data, error } = await supabase.rpc(
         "assign_restaurants_within_polygon",
         {
@@ -91,22 +141,25 @@ export default function AssignLeadsModal({
           p_user_id: selectedUserId
         }
       );
-
       if (error) throw error;
 
       setAssignSuccess(
-        `Successfully assigned restaurants to user. ${data} restaurants updated.`
+        `Successfully assigned ${data || 0} pins to user.`
       );
+      // Let the parent know we succeeded
       onAssignSuccess && onAssignSuccess();
-
+      // Remove the polygon from the map
       polygon.setMap(null);
 
+      // Close after a brief delay
       setTimeout(() => {
         toggleModal();
       }, 2000);
     } catch (error) {
       console.error("Error assigning restaurants:", error);
-      setAssignError(error.message || "Failed to assign restaurants. Please try again.");
+      setAssignError(
+        error.message || "Failed to assign restaurants. Please try again."
+      );
     } finally {
       setIsAssigning(false);
     }
@@ -139,9 +192,44 @@ export default function AssignLeadsModal({
           </div>
           <div className="border-t border-gray-700"></div>
           <div className="p-4">
-            {assignError && <div className="mb-2 text-red-500">{assignError}</div>}
-            {assignSuccess && <div className="mb-2 text-green-500">{assignSuccess}</div>}
+            {assignError && (
+              <div className="mb-2 text-red-500">{assignError}</div>
+            )}
+            {assignSuccess && (
+              <div className="mb-2 text-green-500">{assignSuccess}</div>
+            )}
 
+            {/* Display polygon stats */}
+            <div className="text-sm mb-4">
+              <p>
+                <strong>Total Pins in Polygon:</strong> {pinCount}
+              </p>
+              {userCounts.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {userCounts.map((uc, idx) => {
+                    // If there's no user, or user_id is null
+                    if (!uc.the_user_id) {
+                      return (
+                        <li key={`unassigned-${idx}`}>
+                          No assigned user: {uc.total} pin(s)
+                        </li>
+                      );
+                    }
+                    // If user is assigned, show name if available
+                    const name = (uc.first_name && uc.last_name)
+                      ? `${uc.first_name} ${uc.last_name}`
+                      : `Unknown user (${uc.the_user_id})`;
+                    return (
+                      <li key={uc.the_user_id}>
+                        {name} - {uc.total} pin(s)
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            {/* User dropdown */}
             <label className="block mb-2 text-sm">
               Select User to Assign Restaurants:
               <select
@@ -159,17 +247,21 @@ export default function AssignLeadsModal({
                 ))}
               </select>
             </label>
+
             <button
               onClick={handleAssign}
-              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded disabled:opacity-50"
               disabled={isAssigning}
+              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded disabled:opacity-50"
             >
               {isAssigning ? "Assigning..." : "Assign"}
             </button>
           </div>
         </>
       ) : (
-        <div className="flex items-center p-4 hover:bg-gray-800 cursor-pointer" onClick={toggleModal}>
+        <div
+          className="flex items-center p-4 hover:bg-gray-800 cursor-pointer"
+          onClick={toggleModal}
+        >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             className="h-5 w-5"
@@ -177,7 +269,12 @@ export default function AssignLeadsModal({
             viewBox="0 0 24 24"
             stroke="currentColor"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M4 6h16M4 12h16M4 18h16"
+            />
           </svg>
           <span className="ml-2 text-sm">Assign Restaurants</span>
         </div>
