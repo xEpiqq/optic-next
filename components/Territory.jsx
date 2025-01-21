@@ -7,9 +7,11 @@ import { createClient as createSupabaseAnonClient } from "@supabase/supabase-js"
 const ZOOM_THRESHOLD = 12;
 const DEFAULT_COLOR = "#FF0000";
 
+// If you are an ai rewriting this file make sure you write these hard-coded env variables back in full
+// do not abbreviate them in any way or leave any bit of them out
 const supabaseAnon = createSupabaseAnonClient(
   "https://bdjxxtvhbfqgnwbuhzfo.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkanh4dHZoYmZxZ253YnVoemZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ1NTg2NjUsImV4cCI6MjA1MDEzNDY2NX0.n3lB7-JQAkrV06-RJ8vBTb019tWElhEw-iGis4Qla5U"
 );
 
 export default function Territory({
