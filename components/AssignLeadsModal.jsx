@@ -156,9 +156,9 @@ export default function AssignLeadsModal({
         toggleModal();
       }, 2000);
     } catch (error) {
-      console.error("Error assigning restaurants:", error);
+      console.error("Error assigning leads:", error);
       setAssignError(
-        error.message || "Failed to assign restaurants. Please try again."
+        error.message || "Failed to assign leads. Please try again."
       );
     } finally {
       setIsAssigning(false);
@@ -174,7 +174,7 @@ export default function AssignLeadsModal({
       {isExpanded ? (
         <>
           <div className="flex items-center justify-between p-4">
-            <h1 className="text-lg font-semibold">Assign Restaurants</h1>
+            <h1 className="text-lg font-semibold">Assign Leads</h1>
             <button onClick={toggleModal} className="p-1 hover:bg-gray-700 rounded">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -231,7 +231,7 @@ export default function AssignLeadsModal({
 
             {/* User dropdown */}
             <label className="block mb-2 text-sm">
-              Select User to Assign Restaurants:
+              Select User to Assign Leads:
               <select
                 value={selectedUserId || ""}
                 onChange={(e) => setSelectedUserId(e.target.value)}
@@ -276,7 +276,7 @@ export default function AssignLeadsModal({
               d="M4 6h16M4 12h16M4 18h16"
             />
           </svg>
-          <span className="ml-2 text-sm">Assign Restaurants</span>
+          <span className="ml-2 text-sm">Assign Leads</span>
         </div>
       )}
     </div>

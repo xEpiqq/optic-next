@@ -51,6 +51,21 @@ export default function MapPage({
   const drawingManagerRef = useRef(null);
   const [assignPolygon, setAssignPolygon] = useState(null);
 
+  // Track whether we’re in satellite view or not
+  const [isSatelliteView, setIsSatelliteView] = useState(false);
+
+  // Helper to toggle satellite/roadmap
+  function handleToggleSatelliteView() {
+    if (!map.current) return;
+    if (isSatelliteView) {
+      map.current.setMapTypeId("roadmap");
+      setIsSatelliteView(false);
+    } else {
+      map.current.setMapTypeId("satellite");
+      setIsSatelliteView(true);
+    }
+  }
+
   // Clear an array of markers
   const clearMarkers = (ref) => {
     ref.current.forEach((m) => {
@@ -368,7 +383,13 @@ export default function MapPage({
         </div>
       )}
 
-      <Sidebar isExpanded={showSidebar} onToggle={setShowSidebar} />
+      {/* Pass new props to Sidebar for satellite toggle */}
+      <Sidebar
+        isExpanded={showSidebar}
+        onToggle={setShowSidebar}
+        onToggleSatelliteView={handleToggleSatelliteView}
+        isSatelliteView={isSatelliteView}
+      />
       <Territory
         isExpanded={showTerritory}
         onToggle={setShowTerritory}

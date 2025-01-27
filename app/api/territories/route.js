@@ -62,3 +62,31 @@ function geoJSONToWKT(geoJSON) {
   const coordinates = geoJSON.coordinates[0].map(coord => coord.join(' ')).join(', ');
   return `POLYGON((${coordinates}))`;
 }
+
+// DELETE /api/territories?id=someID
+export async function DELETE(request) {
+  const supabaseAdmin = createServerComponentClient();
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get('id');
+  if (!id) {
+    return NextResponse.json({ error: 'Missing territory id' }, { status: 400 });
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('territories')
+      .delete()
+      .eq('id', id)
+      .select();
+
+    if (error) {
+      console.error('Error deleting territory:', error);
+      return NextResponse.json({ error: 'Failed to delete territory.' }, { status: 500 });
+    }
+
+    return NextResponse.json({ message: 'Territory deleted successfully.' }, { status: 200 });
+  } catch (err) {
+    console.error('Unexpected error deleting territory:', err);
+    return NextResponse.json({ error: 'Unexpected error occurred.' }, { status: 500 });
+  }
+}

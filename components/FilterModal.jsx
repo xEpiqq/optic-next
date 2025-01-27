@@ -68,7 +68,7 @@ export default function FilterModal({
       {isExpanded ? (
         <>
           <div className="flex items-center justify-between p-4">
-            <h2 className="text-lg font-semibold">Filter Restaurants</h2>
+            <h2 className="text-lg font-semibold">Filter Leads</h2>
             <button onClick={() => onToggle && onToggle(false)} className="p-1 hover:bg-gray-700 rounded">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path

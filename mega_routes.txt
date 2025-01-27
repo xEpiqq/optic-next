@@ -1,0 +1,3454 @@
+
+/app/(auth-pages)/forgot-password/page.tsx
+import { forgotPasswordAction } from "@/app/actions";
+import { FormMessage, Message } from "@/components/form-message";
+import { SubmitButton } from "@/components/submit-button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import Link from "next/link";
+
+export default async function ForgotPassword(props: {
+  searchParams: Promise<Message>;
+}) {
+  const searchParams = await props.searchParams;
+  return (
+    <>
+      <form className="flex-1 flex flex-col w-full gap-2 text-foreground [&>input]:mb-6 min-w-64 max-w-64 mx-auto">
+        <div>
+          <h1 className="text-2xl font-medium">Reset Password</h1>
+          <p className="text-sm text-secondary-foreground">
+            Already have an account?{" "}
+            <Link className="text-primary underline" href="/sign-in">
+              Sign in
+            </Link>
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 [&>input]:mb-3 mt-8">
+          <Label htmlFor="email">Email</Label>
+          <Input name="email" placeholder="you@example.com" required />
+          <SubmitButton formAction={forgotPasswordAction}>
+            Reset Password
+          </SubmitButton>
+          <FormMessage message={searchParams} />
+        </div>
+      </form>
+    </>
+  );
+}
+
+
+/app/(auth-pages)/layout.tsx
+export default async function Layout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="max-w-7xl flex flex-col gap-12 items-start mt-60">{children}</div>
+  );
+}
+
+
+/app/(auth-pages)/sign-in/page.tsx
+import { signInAction } from "@/app/actions";
+import { FormMessage, Message } from "@/components/form-message";
+import { SubmitButton } from "@/components/submit-button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import Link from "next/link";
+import { createClient } from "@/utils/supabase/server";
+
+export default async function Login(props: { searchParams: Promise<Message> }) {
+
+  const searchParams = await props.searchParams;
+  return (
+    <>
+    <form className="flex-1 flex flex-col min-w-64">
+      <h1 className="text-2xl font-medium">Sign in</h1>
+      <p className="text-sm text-foreground">
+        Don't have an account?{" "}
+        <Link className="text-foreground font-medium underline" href="/sign-up">
+          Sign up
+        </Link>
+      </p>
+
+      <div className="flex flex-col gap-2 [&>input]:mb-3 mt-8">
+        <Label htmlFor="email">Email</Label>
+        <Input name="email" placeholder="you@example.com" required />
+        <div className="flex justify-between items-center">
+          <Label htmlFor="password">Password</Label>
+          <Link
+            className="text-xs text-foreground underline"
+            href="/forgot-password"
+          >
+            Forgot Password?
+          </Link>
+        </div>
+        <Input
+          type="password"
+          name="password"
+          placeholder="Your password"
+          required
+        />
+        <SubmitButton pendingText="Signing In..." formAction={signInAction}>
+          Sign in
+        </SubmitButton>
+        <FormMessage message={searchParams} />
+      </div>
+    </form>
+    </>
+  );
+}
+
+
+/app/(auth-pages)/sign-up/page.tsx
+import { signUpAction } from "@/app/actions";
+import { FormMessage, Message } from "@/components/form-message";
+import { SubmitButton } from "@/components/submit-button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import Link from "next/link";
+
+export default async function Signup(props: {
+  searchParams: Promise<Message>;
+}) {
+  const searchParams = await props.searchParams;
+  if ("message" in searchParams) {
+    return (
+      <div className="w-full flex-1 flex items-center h-screen sm:max-w-md justify-center gap-2 p-4">
+        <FormMessage message={searchParams} />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <form className="flex flex-col min-w-64 max-w-64 mx-auto">
+        <h1 className="text-2xl font-medium">Sign up</h1>
+        <p className="text-sm text text-foreground">
+          Already have an account?{" "}
+          <Link className="text-primary font-medium underline" href="/sign-in">
+            Sign in
+          </Link>
+        </p>
+        <div className="flex flex-col gap-2 [&>input]:mb-3 mt-8">
+          <Label htmlFor="email">Email</Label>
+          <Input name="email" placeholder="you@example.com" required />
+          <Label htmlFor="password">Password</Label>
+          <Input
+            type="password"
+            name="password"
+            placeholder="Your password"
+            minLength={6}
+            required
+          />
+          <SubmitButton formAction={signUpAction} pendingText="Signing up...">
+            Sign up
+          </SubmitButton>
+          <FormMessage message={searchParams} />
+        </div>
+      </form>
+    </>
+  );
+}
+
+
+/app/actions.ts
+"use server";
+
+import { encodedRedirect } from "@/utils/utils";
+import { createClient } from "@/utils/supabase/server";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+
+export const signUpAction = async (formData: FormData) => {
+  const email = formData.get("email")?.toString();
+  const password = formData.get("password")?.toString();
+  const supabase = await createClient();
+  const origin = (await headers()).get("origin");
+
+  if (!email || !password) {
+    return encodedRedirect(
+      "error",
+      "/sign-up",
+      "Email and password are required",
+    );
+  }
+
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: `${origin}/auth/callback`,
+    },
+  });
+
+  if (error) {
+    console.error(error.code + " " + error.message);
+    return encodedRedirect("error", "/sign-up", error.message);
+  } else {
+    return encodedRedirect(
+      "success",
+      "/sign-up",
+      "Thanks for signing up! Please check your email for a verification link.",
+    );
+  }
+};
+
+export const signInAction = async (formData: FormData) => {
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    return encodedRedirect("error", "/sign-in", error.message);
+  }
+
+  // Confirm session exists
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData.session) {
+    return encodedRedirect(
+      "error",
+      "/sign-in",
+      "Failed to establish session. Please try again."
+    );
+  }
+
+  return redirect("/protected/map");
+};
+
+// confirm session first
+
+
+export const forgotPasswordAction = async (formData: FormData) => {
+  const email = formData.get("email")?.toString();
+  const supabase = await createClient();
+  const origin = (await headers()).get("origin");
+  const callbackUrl = formData.get("callbackUrl")?.toString();
+
+  if (!email) {
+    return encodedRedirect("error", "/forgot-password", "Email is required");
+  }
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${origin}/auth/callback?redirect_to=/protected/reset-password`,
+  });
+
+  if (error) {
+    console.error(error.message);
+    return encodedRedirect(
+      "error",
+      "/forgot-password",
+      "Could not reset password",
+    );
+  }
+
+  if (callbackUrl) {
+    return redirect(callbackUrl);
+  }
+
+  return encodedRedirect(
+    "success",
+    "/forgot-password",
+    "Check your email for a link to reset your password.",
+  );
+};
+
+export const resetPasswordAction = async (formData: FormData) => {
+  const supabase = await createClient();
+
+  const password = formData.get("password") as string;
+  const confirmPassword = formData.get("confirmPassword") as string;
+
+  if (!password || !confirmPassword) {
+    encodedRedirect(
+      "error",
+      "/protected/reset-password",
+      "Password and confirm password are required",
+    );
+  }
+
+  if (password !== confirmPassword) {
+    encodedRedirect(
+      "error",
+      "/protected/reset-password",
+      "Passwords do not match",
+    );
+  }
+
+  const { error } = await supabase.auth.updateUser({
+    password: password,
+  });
+
+  if (error) {
+    encodedRedirect(
+      "error",
+      "/protected/reset-password",
+      "Password update failed",
+    );
+  }
+
+  encodedRedirect("success", "/protected/reset-password", "Password updated");
+};
+
+export const signOutAction = async () => {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  return redirect("/sign-in");
+};
+
+
+/app/api/addteam/route.js
+import { NextResponse } from 'next/server';
+import { createServerComponentClient } from '../../../utils/supabase/supabaseAdmin';
+
+export async function POST(request) {
+  const supabaseAdmin = createServerComponentClient();
+
+  try {
+    const { name } = await request.json();
+    const { data: newTeam, error: insertError } = await supabaseAdmin
+      .from("teams")
+      .insert({ name })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('Error inserting team:', insertError);
+      return NextResponse.json({ error: 'Failed to add team' }, { status: 500 });
+    }
+
+    return NextResponse.json(newTeam, { status: 200 });
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    return NextResponse.json({ error: 'An unexpected error occurred' }, { status: 500 });
+  }
+}
+
+/app/api/adduser/route.js
+import { NextResponse } from 'next/server';
+import { createServerComponentClient } from '../../../utils/supabase/supabaseAdmin';
+
+export async function POST(request) {
+  const supabaseAdmin = createServerComponentClient();
+
+  const { email, password = '123456', firstName, lastName, phone, team } = await request.json();
+
+  console.log('Received email:', email);
+
+  try {
+    const { data: user, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+
+    if (authError) {
+      console.error('Error creating user in Supabase Auth:', authError);
+      return NextResponse.json({ error: 'Failed to create user in Auth' }, { status: 500 });
+    }
+
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .insert({
+        user_id: user.user.id,
+        email: email,
+        first_name: firstName,
+        last_name: lastName,
+        user_type: "user",
+        team: team,
+        phone: phone,
+      });
+
+    if (profileError) {
+      console.error('Error inserting user into profiles table:', profileError);
+      return NextResponse.json({ error: 'Failed to add user to profiles table' }, { status: 500 });
+    }
+
+    return NextResponse.json(user, { status: 200 });
+  } catch (error) {
+    console.error('Error creating user:', error);
+    return NextResponse.json({ error: 'Something went wrong' }, { status: 500 });
+  }
+}
+
+
+/app/api/createUser/route.js
+// File: /pages/api/createUser.js
+
+import { NextResponse } from 'next/server';
+import { createServerComponentClient } from '../../../utils/supabase/supabaseAdmin';
+
+export async function POST(request) {
+  const supabaseAdmin = createServerComponentClient();
+
+  try {
+    const { newUser } = await request.json();
+
+    // Create user with the Admin API and auto-confirm
+    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.createUser({
+      email: newUser.email,
+      password: 'rasmussenoperations123', // Consider generating a secure password or handling differently
+      email_confirm: true,
+      user_metadata: {
+        name: newUser.name,
+      },
+    });
+
+    if (userError) {
+      console.error('Error creating user:', userError);
+      return NextResponse.json({ error: userError.message }, { status: 500 });
+    }
+
+    const userId = userData.user.id;
+
+    // Insert into profiles table
+    const { error: profileError } = await supabaseAdmin.from('profiles').insert([
+      {
+        id: userId,
+        name: newUser.name,
+        email: newUser.email,
+        is_manager: newUser.is_manager,
+        personal_payscale_id: newUser.personal_payscale_id || null,
+        manager_payscale_id: newUser.is_manager ? newUser.manager_payscale_id || null : null,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    if (profileError) {
+      console.error('Error adding user profile:', profileError);
+      return NextResponse.json({ error: profileError.message }, { status: 500 });
+    }
+
+    // Handle assigning users to manager if the new user is a manager
+    if (newUser.is_manager && newUser.assignedUsers.length > 0) {
+      const managerRelations = newUser.assignedUsers.map((assignedUserId) => ({
+        user_id: assignedUserId,
+        manager_id: userId,
+        created_at: new Date().toISOString(),
+      }));
+
+      const { error: relationError } = await supabaseAdmin
+        .from('user_managers')
+        .insert(managerRelations);
+
+      if (relationError) {
+        console.error('Error assigning users to manager:', relationError);
+        return NextResponse.json({ error: relationError.message }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ message: 'User created successfully' }, { status: 200 });
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    return NextResponse.json({ error: 'Unexpected error occurred' }, { status: 500 });
+  }
+}
+
+
+/app/api/restaurantColumns/route.js
+import { NextResponse } from 'next/server';
+import { createServerComponentClient } from '../../../utils/supabase/supabaseAdmin';
+
+export async function GET() {
+  const supabaseAdmin = createServerComponentClient();
+
+  try {
+    const { data, error } = await supabaseAdmin.rpc('get_restaurant_columns');
+    if (error) {
+      console.error('Error fetching restaurant columns:', error);
+      return NextResponse.json({ error: 'Failed to fetch restaurant columns.' }, { status: 500 });
+    }
+
+    const columns = data.map((row) => row.col_name);
+    console.log(columns);
+    return NextResponse.json({ columns }, { status: 200 });
+  } catch (err) {
+    console.error('Unexpected error:', err);
+    return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
+  }
+}
+
+
+/app/api/restaurants/route.js
+import { NextResponse } from 'next/server';
+import { createServerComponentClient } from '../../../utils/supabase/supabaseAdmin';
+
+export async function GET(request) {
+  const supabaseAdmin = createServerComponentClient();
+
+  console.log("FETCHING RESTAURANTS WITHIN BOUNDS");
+  const { searchParams } = new URL(request.url);
+  const min_lat = parseFloat(searchParams.get('min_lat'));
+  const min_lon = parseFloat(searchParams.get('min_lon'));
+  const max_lat = parseFloat(searchParams.get('max_lat'));
+  const max_lon = parseFloat(searchParams.get('max_lon'));
+
+  let filters = [];
+  const filtersParam = searchParams.get('filters');
+  if (filtersParam) {
+    try {
+      filters = JSON.parse(decodeURIComponent(filtersParam));
+    } catch (error) {
+      console.error('Invalid filters parameter:', error);
+      return NextResponse.json({ error: 'Invalid filters parameter.' }, { status: 400 });
+    }
+  }
+
+  // Validate bounding box params:
+  if (
+    isNaN(min_lat) ||
+    isNaN(min_lon) ||
+    isNaN(max_lat) ||
+    isNaN(max_lon)
+  ) {
+    return NextResponse.json(
+      { error: 'Invalid or missing query parameters.' },
+      { status: 400 }
+    );
+  }
+
+  try {
+    // IMPORTANT CHANGE HERE: now we select from `restaurants`,
+    // and we filter by the newly added `latitude` / `longitude` columns.
+    let query = supabaseAdmin
+      .from('restaurants')
+      .select(`
+        id,
+        address,
+        address2,
+        city,
+        state,
+        phone,
+        first_name,
+        last_name,
+        latitude,
+        longitude,
+        status,
+        knocks,
+        last_knocked,
+        email,
+        updated_at,
+        user_id
+      `)
+      .lte('latitude', max_lat)
+      .gte('latitude', min_lat)
+      .lte('longitude', max_lon)
+      .gte('longitude', min_lon);
+
+    // If there are dynamic filters, apply them
+    const allowedOperators = ['eq', 'neq', 'gt', 'lt', 'gte', 'lte', 'like', 'ilike'];
+    const operatorMap = {
+      '=': 'eq',
+      '!=': 'neq',
+      '>': 'gt',
+      '<': 'lt',
+      '>=': 'gte',
+      '<=': 'lte',
+      'LIKE': 'like',
+    };
+
+    for (const filter of filters) {
+      const { column, operator, value } = filter;
+      if (column && operator && value !== undefined) {
+        const supabaseOperator = operatorMap[operator];
+        if (!supabaseOperator || !allowedOperators.includes(supabaseOperator)) {
+          return NextResponse.json(
+            { error: `Invalid operator: ${operator}` },
+            { status: 400 }
+          );
+        }
+        query = query[supabaseOperator](column, value);
+      }
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('Error fetching restaurants:', error);
+      return NextResponse.json(
+        { error: 'Failed to fetch restaurants.' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ restaurants: data }, { status: 200 });
+  } catch (err) {
+    console.error('Unexpected error:', err);
+    return NextResponse.json(
+      { error: 'An unexpected error occurred.' },
+      { status: 500 }
+    );
+  }
+}
+
+
+/app/api/saveTerritory/route.js
+import { NextResponse } from 'next/server';
+import { createServerComponentClient } from '../../../utils/supabase/supabaseAdmin';
+
+export async function POST(request) {
+  const supabaseAdmin = createServerComponentClient();
+
+  try {
+    const { name, color, coordinates } = await request.json();
+
+    if (
+      !name ||
+      !color ||
+      !coordinates ||
+      !Array.isArray(coordinates) ||
+      coordinates.length < 3
+    ) {
+      return NextResponse.json({ message: 'Invalid input data.' }, { status: 400 });
+    }
+
+    const geoJson = {
+      type: 'Polygon',
+      coordinates: [
+        coordinates.map(coord => [coord.lng, coord.lat])
+      ]
+    };
+
+    const firstCoord = geoJson.coordinates[0][0];
+    const lastCoord = geoJson.coordinates[0][geoJson.coordinates[0].length - 1];
+    if (firstCoord[0] !== lastCoord[0] || firstCoord[1] !== lastCoord[1]) {
+      geoJson.coordinates[0].push(firstCoord);
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('territories')
+      .insert([{ name, color, geom: geoJson }]);
+
+    if (error) {
+      console.error('Supabase insert error:', error);
+      return NextResponse.json({ message: 'Failed to save territory.', details: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ message: 'Territory saved successfully.', data }, { status: 200 });
+  } catch (error) {
+    console.error('Error in saveTerritory API:', error);
+    return NextResponse.json({ message: 'Internal server error.', details: error.message }, { status: 500 });
+  }
+}
+
+
+/app/api/territories/route.js
+import { NextResponse } from 'next/server';
+import { createServerComponentClient } from '../../../utils/supabase/supabaseAdmin';
+
+// GET /api/territories
+export async function GET(request) {
+  const supabaseAdmin = createServerComponentClient();
+  const { searchParams } = new URL(request.url);
+  const min_lat = parseFloat(searchParams.get('min_lat'));
+  const min_lon = parseFloat(searchParams.get('min_lon'));
+  const max_lat = parseFloat(searchParams.get('max_lat'));
+  const max_lon = parseFloat(searchParams.get('max_lon'));
+
+  // Adjust logic if bounding is needed. Here we just select all.
+  const { data, error } = await supabaseAdmin
+    .from('territories')
+    .select('id, name, description, geometry');
+
+  if (error) {
+    console.error('Error fetching territories:', error);
+    return NextResponse.json({ error: 'Failed to fetch territories.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ territories: data }, { status: 200 });
+}
+
+// POST /api/territories
+export async function POST(request) {
+  const supabaseAdmin = createServerComponentClient();
+
+  try {
+    const { name, description, geometry } = await request.json();
+    const wkt = geoJSONToWKT(geometry);
+
+    const { data, error } = await supabaseAdmin
+      .from('territories')
+      .insert([
+        {
+          name,
+          description,
+          // This assumes you can directly insert WKT. If PostGIS or a function is needed, adjust accordingly.
+          geometry: wkt,
+        }
+      ])
+      .select();
+
+    if (error) {
+      console.error('Error creating territory:', error);
+      return NextResponse.json({ error: 'Failed to create territory.' }, { status: 500 });
+    }
+
+    return NextResponse.json({ territory: data[0] }, { status: 201 });
+  } catch (err) {
+    console.error('Error parsing request body:', err);
+    return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
+  }
+}
+
+function geoJSONToWKT(geoJSON) {
+  if (geoJSON.type !== 'Polygon') {
+    throw new Error('Only Polygon type is supported.');
+  }
+  const coordinates = geoJSON.coordinates[0].map(coord => coord.join(' ')).join(', ');
+  return `POLYGON((${coordinates}))`;
+}
+
+
+/app/api/territoryStats/route.js
+import { NextResponse } from "next/server";
+import { createServerComponentClient } from "../../../utils/supabase/supabaseAdmin";
+
+// Expects POST { coordinates: [ { lat, lng }, ... ] }
+// We'll use that to call our RPC "restaurants_in_polygon_stats",
+// which returns how many restaurants are inside that polygon.
+export async function POST(request) {
+  const supabaseAdmin = createServerComponentClient();
+
+  try {
+    const { coordinates } = await request.json();
+
+    // Basic validation
+    if (!coordinates || !Array.isArray(coordinates) || coordinates.length < 3) {
+      return NextResponse.json(
+        { error: "Invalid polygon coordinates." },
+        { status: 400 }
+      );
+    }
+
+    // Convert to a valid GeoJSON Polygon
+    const geoJson = {
+      type: "Polygon",
+      coordinates: [
+        // Turn [{ lat, lng }, ...] into [[lng, lat], ...]
+        coordinates.map((pt) => [pt.lng, pt.lat]),
+      ],
+    };
+
+    // Call the new Postgres RPC
+    const { data, error } = await supabaseAdmin.rpc(
+      "restaurants_in_polygon_stats",
+      { p_polygon: geoJson }
+    );
+    if (error) {
+      console.error("territoryStats error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // data should be an array of length 1, e.g. [{ total: 42 }]
+    let result = data;
+    if (Array.isArray(data) && data.length > 0) {
+      result = data[0];
+    }
+
+    return NextResponse.json(
+      { total: result.total || 0 },
+      { status: 200 }
+    );
+  } catch (err) {
+    console.error("territoryStats route error:", err);
+    return NextResponse.json(
+      { error: "Unexpected error occurred." },
+      { status: 500 }
+    );
+  }
+}
+
+
+/app/layout.tsx
+import { hasEnvVars } from "@/utils/supabase/check-env-vars";
+import { GeistSans } from "geist/font/sans";
+import { ThemeProvider } from "next-themes";
+import Link from "next/link";
+import "./globals.css";
+// pages/_app.js
+import { SelectedTableProvider } from '../contexts/SelectedTableContext';
+
+const defaultUrl = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : "http://localhost:3000";
+
+export const metadata = {
+  metadataBase: new URL(defaultUrl),
+  title: "Optic D2D",
+  description: "",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" className={GeistSans.className} suppressHydrationWarning>
+      <body className="bg-background text-foreground">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+    <SelectedTableProvider>
+
+          <main className="min-h-screen flex flex-col items-center">
+            <div className="flex-1 w-full flex flex-col gap-20 items-center">
+              {children}
+              <div className="flex flex-col gap-20 max-w-5xl p-5">
+              </div>
+            </div>
+          </main>
+    </SelectedTableProvider>
+
+        </ThemeProvider>
+      </body>
+    </html>
+  );
+}
+
+
+/app/page.tsx
+import { signInAction } from "@/app/actions";
+import { FormMessage, Message } from "@/components/form-message";
+import { SubmitButton } from "@/components/submit-button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import Link from "next/link";
+
+export default async function Login(props: { searchParams: Promise<Message> }) {
+  const searchParams = await props.searchParams;
+  return (
+    <form className="flex-1 flex flex-col min-w-64 mt-60">
+      <h1 className="text-2xl font-medium">Sign in</h1>
+      <p className="text-sm text-foreground">
+        Don't have an account?{" "}
+        <Link className="text-foreground font-medium underline" href="/sign-up">
+          Sign up
+        </Link>
+      </p>
+      <div className="flex flex-col gap-2 [&>input]:mb-3 mt-8">
+        <Label htmlFor="email">Email</Label>
+        <Input name="email" placeholder="you@example.com" required />
+        <div className="flex justify-between items-center">
+          <Label htmlFor="password">Password</Label>
+          <Link
+            className="text-xs text-foreground underline"
+            href="/forgot-password"
+          >
+            Forgot Password?
+          </Link>
+        </div>
+        <Input
+          type="password"
+          name="password"
+          placeholder="Your password"
+          required
+        />
+        <SubmitButton pendingText="Signing In..." formAction={signInAction}>
+          Sign in
+        </SubmitButton>
+        <FormMessage message={searchParams} />
+      </div>
+    </form>
+  );
+}
+
+
+/app/protected/import/page.jsx
+"use client";
+
+import React, { useState } from "react";
+import { supabase } from "@/lib/supabaseClient"; // Adjust path as needed
+
+const BATCH_SIZE = 50;
+const DELAY = 1000; // 1 second
+const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+export default function Page() {
+  const [file, setFile] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState("");
+
+  const handleFileUpload = (e) => {
+    setFile(e.target.files[0]);
+    setUploadMessage("");
+  };
+
+  const startUpload = async () => {
+    if (!file) return;
+    setIsProcessing(true);
+    setUploadMessage("Processing...");
+
+    try {
+      const csv = await readFileAsText(file);
+      const addresses = parseCSV(csv);
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
+        const batch = addresses.slice(i, i + BATCH_SIZE);
+        const { success, failure } = await processBatch(batch);
+        successCount += success;
+        failureCount += failure;
+        setUploadMessage(
+          `Processed ${successCount + failureCount} records...`
+        );
+        await sleep(DELAY);
+      }
+
+      setUploadMessage(
+        `Upload completed! Successfully uploaded: ${successCount}, Failed: ${failureCount}`
+      );
+    } catch (error) {
+      console.error("Error during upload:", error);
+      setUploadMessage(`An error occurred: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const readFileAsText = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = (err) => reject(err);
+      reader.readAsText(file);
+    });
+
+  const parseCSV = (csv) => {
+    const lines = csv.trim().split("\n");
+    const headers = lines[0].split(",").map((h) => h.trim().toUpperCase());
+
+    return lines
+      .slice(1)
+      .map((line) => {
+        const values = line.split(",").map((v) => v.trim());
+        return {
+          address: values[headers.indexOf("ADDRESS")] || "",
+          city: values[headers.indexOf("CITY")] || "",
+          state: values[headers.indexOf("STATE")] || "",
+          zip5: values[headers.indexOf("ZIP_5")] || "",
+          zip9: values[headers.indexOf("ZIP_9")] || null
+        };
+      })
+      .filter((row) => row.address && row.city && row.state && row.zip5);
+  };
+
+  const processBatch = async (batch) => {
+    let success = 0;
+    let failure = 0;
+    const geocodes = await Promise.all(batch.map(geocodeAddress));
+
+    const inserts = geocodes.map(async (res) => {
+      if (!res.success) return failure++;
+      const { data, error } = await supabase.from("restaurants").insert({
+        address: res.data.address,
+        city: res.data.city,
+        state: res.data.state,
+        zip5: res.data.zip5,
+        zip9: res.data.zip9,
+        location: {
+          type: "Point",
+          coordinates: [res.data.longitude, res.data.latitude]
+        },
+        status: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      error ? failure++ : success++;
+    });
+
+    await Promise.all(inserts);
+    return { success, failure };
+  };
+
+  const geocodeAddress = async ({ address, city, state, zip5, zip9 }) => {
+    const fullAddress = `${address}, ${city}, ${state} ${zip5}, USA`;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+      fullAddress
+    )}&key=${apiKey}`;
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.status === "OK" && data.results.length > 0) {
+        const loc = data.results[0].geometry.location;
+        return {
+          success: true,
+          data: {
+            address,
+            city,
+            state,
+            zip5,
+            zip9: zip9 || null,
+            latitude: loc.lat,
+            longitude: loc.lng
+          }
+        };
+      }
+      console.error("Geocoding failed:", fullAddress, data.status);
+      return { success: false };
+    } catch (error) {
+      console.error("Geocoding error:", fullAddress, error);
+      return { success: false };
+    }
+  };
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-900">
+      {/* Example: <Sidebar /> if you have one */}
+      <div className="text-center flex flex-col">
+        <svg
+          className="mx-auto h-12 w-12 text-gray-400"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            vectorEffect="non-scaling-stroke"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"
+          />
+        </svg>
+
+        <h3 className="mt-2 text-sm font-semibold text-gray-300">
+          Import Restaurants
+        </h3>
+        <p className="mt-1 text-sm text-gray-400">
+          Select a CSV file from your device
+        </p>
+
+        <div className="mt-6">
+          <label
+            htmlFor="file-upload"
+            className="relative cursor-pointer bg-gray-800 rounded-md font-medium text-blue-400 hover:text-blue-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+          >
+            <span className="inline-flex items-center px-4 py-2 border border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-800 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+              Choose file
+            </span>
+            <input
+              id="file-upload"
+              name="file-upload"
+              type="file"
+              accept=".csv"
+              className="sr-only"
+              onChange={handleFileUpload}
+            />
+          </label>
+        </div>
+
+        {file && (
+          <>
+            <p className="mt-2 text-sm text-gray-500">{file.name}</p>
+            <button
+              className="mt-6 bg-blue-600 text-white py-2 px-4 rounded flex justify-center items-center disabled:opacity-50"
+              onClick={startUpload}
+              disabled={isProcessing}
+            >
+              {isProcessing && (
+                <svg className="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8v8z"
+                  ></path>
+                </svg>
+              )}
+              {isProcessing ? "Uploading..." : "Start Upload"}
+            </button>
+          </>
+        )}
+
+        {uploadMessage && (
+          <p className="mt-4 text-sm text-gray-400">{uploadMessage}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+/app/protected/layout.jsx
+'use client'
+
+const Example = ({ children }) => {
+
+  return (
+    <div>
+      {children}
+    </div>
+  );
+};
+
+export default Example;
+
+
+/app/protected/map/MapPage.jsx
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
+import Toolbar from "@/components/Toolbar";
+import Territory from "@/components/Territory";
+import Sidebar from "@/components/Sidebar";
+import FilterModal from "@/components/FilterModal";
+import AssignLeadsModal from "@/components/AssignLeadsModal";
+
+const ZOOM_THRESHOLD = 15;
+
+// Convert numeric status to a hex color
+function getStatusColor(status) {
+  switch (status) {
+    case 0: return "#6A0DAD"; // New
+    case 1: return "#FFD700"; // Gone
+    case 2: return "#1E90FF"; // Later
+    case 3: return "#FF6347"; // Nope
+    case 4: return "#32CD32"; // Sold
+    case 5: return "#00008B"; // Return
+    default: return "#007bff"; // fallback
+  }
+}
+
+export default function MapPage({
+  initialClusters = [],
+  initialZoomLevel = 5,
+  initialTerritories = [],
+}) {
+  const supabase = createClient();
+  const mapRef = useRef(null);
+  const map = useRef(null);
+
+  // cluster and individual markers
+  const clusterMarkers = useRef([]);
+  const individualMarkers = useRef([]);
+
+  const infoWindowRef = useRef(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const hasLoadedIndividuals = useRef(false);
+  const fetchCounter = useRef(0);
+
+  const [showTerritory, setShowTerritory] = useState(false);
+  const [showFilter, setShowFilter] = useState(false);
+  const [showAssign, setShowAssign] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
+
+  // For "Assign Leads" polygon drawing
+  const [isAssigning, setIsAssigning] = useState(false);
+  const drawingManagerRef = useRef(null);
+  const [assignPolygon, setAssignPolygon] = useState(null);
+
+  // Clear an array of markers
+  const clearMarkers = (ref) => {
+    ref.current.forEach((m) => {
+      if (m instanceof google.maps.Marker) {
+        m.setMap(null);
+      } else if (m.map) {
+        m.map = null;
+      }
+    });
+    ref.current = [];
+  };
+
+  // Simplify zoom -> cluster zoom
+  const getMappedZoom = (z) => {
+    if (z >= 12) return 10;
+    if (z >= 11) return 9;
+    if (z >= 10) return 8;
+    if (z >= 8) return 6;
+    if (z >= 3) return 5;
+    return Math.round(z);
+  };
+
+  // fetch cluster points
+  const fetchClusters = async (z) => {
+    const currentFetchId = ++fetchCounter.current;
+    if (!map.current) return;
+    const bounds = map.current.getBounds();
+    if (!bounds) return;
+
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    const [min_lat, min_lon, max_lat, max_lon] =
+      z === 5
+        ? [null, null, null, null]
+        : [sw.lat(), sw.lng(), ne.lat(), ne.lng()];
+
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase.rpc("get_cached_clusters", {
+        p_zoom_level: z,
+        p_min_lat: min_lat,
+        p_min_lon: min_lon,
+        p_max_lat: max_lat,
+        p_max_lon: max_lon,
+      });
+      if (error) throw error;
+      if (currentFetchId !== fetchCounter.current) return;
+
+      clearMarkers(clusterMarkers);
+      (data || []).forEach((c) => {
+        const lat = parseFloat(c.latitude);
+        const lng = parseFloat(c.longitude);
+        if (isNaN(lat) || isNaN(lng)) return;
+
+        const minScale = 20;
+        const maxScale = 50;
+        const normalized = Math.min(1, Math.max(0, (c.count - 1) / 999));
+        const scale = minScale + normalized * (maxScale - minScale);
+
+        const marker = new google.maps.Marker({
+          position: { lat, lng },
+          map: map.current,
+          label: {
+            text: String(c.count),
+            color: "white",
+            fontSize: "12px",
+            fontWeight: "bold",
+          },
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            fillColor: "#007bff",
+            fillOpacity: 0.6,
+            scale,
+            strokeColor: "#fff",
+            strokeWeight: 1,
+          },
+        });
+        clusterMarkers.current.push(marker);
+      });
+    } catch (e) {
+      if (currentFetchId === fetchCounter.current) setError(e.message);
+    } finally {
+      if (currentFetchId === fetchCounter.current) setLoading(false);
+    }
+  };
+
+  // fetch individual restaurants
+  const fetchIndividuals = async () => {
+    const currentFetchId = ++fetchCounter.current;
+    if (!map.current) return;
+
+    const bounds = map.current.getBounds();
+    if (!bounds) return;
+
+    // expand bounding box
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    const dLat = ne.lat() - sw.lat();
+    const dLng = ne.lng() - sw.lng();
+    const minLat = sw.lat() - dLat;
+    const minLon = sw.lng() - dLng;
+    const maxLat = ne.lat() + dLat;
+    const maxLon = ne.lng() + dLng;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(
+        `/api/restaurants?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}`
+      );
+      if (!res.ok) throw new Error("Failed to fetch individuals");
+      const { restaurants } = await res.json();
+
+      if (currentFetchId !== fetchCounter.current) return;
+
+      clearMarkers(individualMarkers);
+
+      if (!infoWindowRef.current) {
+        infoWindowRef.current = new google.maps.InfoWindow();
+      }
+
+      const { AdvancedMarkerElement, PinElement } =
+        await google.maps.importLibrary("marker");
+
+      (restaurants || []).forEach((r) => {
+        const lat = parseFloat(r.latitude);
+        const lng = parseFloat(r.longitude);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          const numericStatus =
+            typeof r.status === "string" ? parseInt(r.status, 10) : r.status;
+          const color = getStatusColor(numericStatus);
+
+          // Create a pin with custom color
+          const pin = new PinElement({
+            background: color,
+            borderColor: "transparent",
+            glyphColor: "#ffffff",
+            scale: 0.9,
+          });
+
+          const advMarker = new AdvancedMarkerElement({
+            map: map.current,
+            position: { lat, lng },
+            title: `Status: ${numericStatus}`,
+            content: pin.element,
+          });
+
+          advMarker.element.style.cursor = "pointer";
+          advMarker.element.addEventListener("mouseover", () => {
+            pin.scale = 1.1;
+          });
+          advMarker.element.addEventListener("mouseout", () => {
+            pin.scale = 0.9;
+          });
+
+          advMarker.element.addEventListener("click", () => {
+            const detailsHtml = `
+              <div style="min-width:220px; color:#fff; background:#222; padding:8px; border-radius:4px;">
+                <h3 style="margin:0; font-size:1rem; color:#ffd700;">
+                  ${r.first_name || ""} ${r.last_name || ""}
+                </h3>
+                <p style="font-size:0.9rem; margin:2px 0;">
+                  <strong>Address:</strong> ${r.address || ""} 
+                  ${r.city ? ", " + r.city : ""} ${r.state || ""}
+                </p>
+                <p style="font-size:0.85rem; margin:2px 0;">
+                  <strong>Phone:</strong> ${r.phone || "N/A"}
+                </p>
+                <p style="font-size:0.85rem; margin:2px 0;">
+                  <strong>Status:</strong> ${numericStatus}
+                </p>
+                <hr style="border:none; border-bottom:1px solid #555; margin:6px 0;" />
+                <p style="font-size:0.8rem; margin:0;">
+                  <em>Last updated:</em> ${r.updated_at || "N/A"}
+                </p>
+              </div>
+            `;
+            infoWindowRef.current.setContent(detailsHtml);
+            infoWindowRef.current.open({
+              anchor: advMarker,
+              map: map.current,
+            });
+          });
+
+          individualMarkers.current.push(advMarker);
+        }
+      });
+
+      hasLoadedIndividuals.current = true;
+    } catch (e) {
+      if (currentFetchId === fetchCounter.current) setError(e.message);
+    } finally {
+      if (currentFetchId === fetchCounter.current) setLoading(false);
+    }
+  };
+
+  // map init
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!window.google) {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement("script");
+            s.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&v=weekly&libraries=geometry,drawing,marker`;
+            s.async = true;
+            s.defer = true;
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+          });
+        }
+
+        map.current = new google.maps.Map(mapRef.current, {
+          center: { lat: 39.5, lng: -98.35 },
+          zoom: initialZoomLevel,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          gestureHandling: "greedy",
+          mapId: "YOUR_MAP_ID",
+        });
+
+        // first load
+        google.maps.event.addListenerOnce(map.current, "idle", () => {
+          fetchClusters(getMappedZoom(map.current.getZoom()));
+        });
+
+        // handle zoom changes
+        map.current.addListener("zoom_changed", () => {
+          const z = map.current.getZoom();
+          if (hasLoadedIndividuals.current && z > ZOOM_THRESHOLD) return;
+
+          google.maps.event.addListenerOnce(map.current, "idle", async () => {
+            if (z >= ZOOM_THRESHOLD) {
+              clearMarkers(clusterMarkers);
+              await fetchIndividuals();
+            } else {
+              clearMarkers(individualMarkers);
+              await fetchClusters(getMappedZoom(z));
+            }
+          });
+        });
+      } catch (err) {
+        console.error("Google Maps failed to load:", err);
+        setError("Google Maps failed to load.");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // handle toggling the "assign leads" mode
+  function handleAssignLeads() {
+    setShowAssign(!showAssign);
+    setIsAssigning(!showAssign);
+  }
+
+  // set up or tear down drawing manager for assigning leads
+  useEffect(() => {
+    if (!map.current) return;
+    if (isAssigning) {
+      if (!google?.maps?.drawing) return;
+      drawingManagerRef.current = new google.maps.drawing.DrawingManager({
+        drawingMode: google.maps.drawing.OverlayType.POLYGON,
+        drawingControl: false,
+        polygonOptions: {
+          fillColor: "#FF9800",
+          fillOpacity: 0.35,
+          strokeColor: "#FF9800",
+          strokeWeight: 2,
+          editable: true,
+        },
+      });
+      drawingManagerRef.current.setMap(map.current);
+
+      google.maps.event.addListener(
+        drawingManagerRef.current,
+        "overlaycomplete",
+        (e) => {
+          if (e.type === google.maps.drawing.OverlayType.POLYGON) {
+            if (assignPolygon) {
+              assignPolygon.setMap(null);
+            }
+            setAssignPolygon(e.overlay);
+            drawingManagerRef.current.setDrawingMode(null);
+          }
+        }
+      );
+    } else {
+      // Turn off polygon mode
+      if (drawingManagerRef.current) {
+        drawingManagerRef.current.setMap(null);
+        drawingManagerRef.current = null;
+      }
+      // Optionally remove leftover polygon
+      if (assignPolygon) {
+        assignPolygon.setMap(null);
+        setAssignPolygon(null);
+      }
+    }
+  }, [isAssigning, assignPolygon]);
+
+  return (
+    <div className="relative w-screen h-screen">
+      <div ref={mapRef} className="w-full h-full" />
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+      {error && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white p-2 rounded">
+          {error}
+        </div>
+      )}
+
+      <Sidebar isExpanded={showSidebar} onToggle={setShowSidebar} />
+      <Territory
+        isExpanded={showTerritory}
+        onToggle={setShowTerritory}
+        territories={initialTerritories}
+        map={map.current}
+      />
+      <FilterModal isExpanded={showFilter} onToggle={setShowFilter} />
+
+      <AssignLeadsModal
+        isExpanded={showAssign}
+        onToggle={setShowAssign}
+        polygon={assignPolygon}
+        onAssignSuccess={() => {
+          console.log("Assign success!");
+          // Turn off polygon mode so the cursor goes back to normal
+          setIsAssigning(false);
+        }}
+      />
+
+      <Toolbar
+        onPan={() => setShowSidebar(!showSidebar)}
+        onFilterLeads={() => setShowFilter(!showFilter)}
+        onToggleTerritoryMode={() => setShowTerritory(!showTerritory)}
+        onAssignLeads={handleAssignLeads}
+        onCreateLead={() => {}}
+      />
+    </div>
+  );
+}
+
+
+/app/protected/map/page.jsx
+import { supabase } from '@/lib/supabaseClient';
+import MapPage from './MapPage';
+
+export default async function Page() {
+  const initialZoomLevel = 5;
+  const { data: clusters, error: clustersError } = await supabase.rpc('get_cached_clusters', {
+    p_zoom_level: initialZoomLevel,
+    p_min_lat: null,
+    p_min_lon: null,
+    p_max_lat: null,
+    p_max_lon: null,
+  });
+  if (clustersError) {
+    console.error('Error fetching clusters:', clustersError);
+    throw new Error('Failed to fetch initial clusters.');
+  }
+
+  const { data: territories, error: territoriesError } = await supabase
+    .from('territories')
+    .select('id, name, color, geom');
+
+  if (territoriesError) {
+    console.error('Error fetching territories:', territoriesError);
+    throw new Error('Failed to fetch territories.');
+  }
+
+  return (
+    <MapPage
+      initialClusters={clusters ?? []}
+      initialZoomLevel={initialZoomLevel}
+      initialTerritories={territories ?? []}
+    />
+  );
+}
+
+
+/app/protected/page.jsx
+// pages/index.js
+export default function HomePage() {
+  return (
+    <main style={{ fontFamily: "sans-serif", textAlign: "center", marginTop: "2rem" }}>
+      <h1>Hello, Next.js!</h1>
+      <p>Just a simple page.</p>
+    </main>
+  );
+}
+
+
+/app/protected/reset-password/page.tsx
+import { resetPasswordAction } from "@/app/actions";
+import { FormMessage, Message } from "@/components/form-message";
+import { SubmitButton } from "@/components/submit-button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+export default async function ResetPassword(props: {
+  searchParams: Promise<Message>;
+}) {
+  const searchParams = await props.searchParams;
+  return (
+    <form className="flex flex-col w-full max-w-md p-4 gap-2 [&>input]:mb-4">
+      <h1 className="text-2xl font-medium">Reset password</h1>
+      <p className="text-sm text-foreground/60">
+        Please enter your new password below.
+      </p>
+      <Label htmlFor="password">New password</Label>
+      <Input
+        type="password"
+        name="password"
+        placeholder="New password"
+        required
+      />
+      <Label htmlFor="confirmPassword">Confirm password</Label>
+      <Input
+        type="password"
+        name="confirmPassword"
+        placeholder="Confirm password"
+        required
+      />
+      <SubmitButton formAction={resetPasswordAction}>
+        Reset password
+      </SubmitButton>
+      <FormMessage message={searchParams} />
+    </form>
+  );
+}
+
+
+/components/AssignLeadsModal.jsx
+"use client";
+
+import { useEffect, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
+
+export default function AssignLeadsModal({
+  isExpanded = true,
+  polygon = null,
+  onToggle,
+  onAssignSuccess
+}) {
+  const supabase = createClient();
+
+  const [users, setUsers] = useState([]);
+  const [selectedUserId, setSelectedUserId] = useState(null);
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [assignError, setAssignError] = useState(null);
+  const [assignSuccess, setAssignSuccess] = useState(null);
+
+  // Stats for the polygon
+  const [pinCount, setPinCount] = useState(0);
+  const [userCounts, setUserCounts] = useState([]); 
+  // userCounts will be an array of: { the_user_id, first_name, last_name, total }
+
+  // Fetch the list of possible users (for the dropdown)
+  useEffect(() => {
+    fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Whenever 'polygon' changes, fetch stats for that polygon
+  useEffect(() => {
+    if (!polygon) {
+      setPinCount(0);
+      setUserCounts([]);
+      return;
+    }
+    const path = polygon.getPath();
+    if (!path || path.getLength() < 3) {
+      setPinCount(0);
+      setUserCounts([]);
+      return;
+    }
+
+    // Convert polygon to standard GeoJSON
+    const coords = [];
+    for (let i = 0; i < path.getLength(); i++) {
+      const latLng = path.getAt(i);
+      coords.push([latLng.lng(), latLng.lat()]);
+    }
+    // Close the polygon
+    coords.push([...coords[0]]);
+
+    const polygonGeoJSON = { type: "Polygon", coordinates: [coords] };
+    fetchPolygonStats(polygonGeoJSON);
+  }, [polygon]);
+
+  async function fetchUsers() {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name")
+        .order("first_name", { ascending: true });
+
+      if (error) throw error;
+      setUsers(data);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      setAssignError("Failed to load users. Please try again.");
+    }
+  }
+
+  async function fetchPolygonStats(polygonGeoJSON) {
+    try {
+      setAssignError(null);
+      const { data, error } = await supabase.rpc(
+        "get_restaurant_counts_by_polygon",
+        { p_polygon: polygonGeoJSON }
+      );
+      if (error) throw error;
+      // data => [{ the_user_id, first_name, last_name, total }, ...]
+      setUserCounts(data || []);
+      // Sum the total field for overall pin count
+      const sum = (data || []).reduce((acc, row) => acc + row.total, 0);
+      setPinCount(sum);
+    } catch (err) {
+      console.error("Error fetching polygon stats:", err);
+      setAssignError("Failed to load polygon stats.");
+      setPinCount(0);
+      setUserCounts([]);
+    }
+  }
+
+  function toggleModal() {
+    onToggle && onToggle(false);
+  }
+
+  async function handleAssign() {
+    if (!selectedUserId) {
+      setAssignError("Please select a user to assign.");
+      return;
+    }
+    if (!polygon) {
+      setAssignError("No polygon drawn. Please draw one first.");
+      return;
+    }
+    const path = polygon.getPath();
+    if (!path || path.getLength() < 3) {
+      setAssignError("Polygon is not complete—needs at least 3 points.");
+      return;
+    }
+
+    setIsAssigning(true);
+    setAssignError(null);
+    setAssignSuccess(null);
+
+    try {
+      // Convert path to lat/lng array
+      const coords = path.getArray().map((latlng) => ({
+        latitude: parseFloat(latlng.lat().toFixed(7)),
+        longitude: parseFloat(latlng.lng().toFixed(7))
+      }));
+      // Force close
+      if (
+        coords[0].latitude !== coords[coords.length - 1].latitude ||
+        coords[0].longitude !== coords[coords.length - 1].longitude
+      ) {
+        coords.push({ ...coords[0] });
+      }
+
+      const polygonGeoJSON = {
+        type: "Polygon",
+        coordinates: [coords.map((pt) => [pt.longitude, pt.latitude])]
+      };
+
+      // RPC to assign leads
+      const { data, error } = await supabase.rpc(
+        "assign_restaurants_within_polygon",
+        {
+          p_polygon: polygonGeoJSON,
+          p_user_id: selectedUserId
+        }
+      );
+      if (error) throw error;
+
+      setAssignSuccess(
+        `Successfully assigned ${data || 0} pins to user.`
+      );
+      // Let the parent know we succeeded
+      onAssignSuccess && onAssignSuccess();
+      // Remove the polygon from the map
+      polygon.setMap(null);
+
+      // Close after a brief delay
+      setTimeout(() => {
+        toggleModal();
+      }, 2000);
+    } catch (error) {
+      console.error("Error assigning leads:", error);
+      setAssignError(
+        error.message || "Failed to assign leads. Please try again."
+      );
+    } finally {
+      setIsAssigning(false);
+    }
+  }
+
+  return (
+    <div
+      className={`fixed z-50 right-4 top-4 bg-gray-900 text-white rounded-lg shadow-lg transition-all duration-300 ${
+        isExpanded ? "w-80" : "w-0"
+      } overflow-hidden`}
+    >
+      {isExpanded ? (
+        <>
+          <div className="flex items-center justify-between p-4">
+            <h1 className="text-lg font-semibold">Assign Leads</h1>
+            <button onClick={toggleModal} className="p-1 hover:bg-gray-700 rounded">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 8.586L15.95 2.636l1.414 1.414L11.414 10l5.95 5.95-1.414 1.414L10 11.414l-5.95 5.95-1.414-1.414L8.586 10 2.636 4.05l1.414-1.414L10 8.586z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          </div>
+          <div className="border-t border-gray-700"></div>
+          <div className="p-4">
+            {assignError && (
+              <div className="mb-2 text-red-500">{assignError}</div>
+            )}
+            {assignSuccess && (
+              <div className="mb-2 text-green-500">{assignSuccess}</div>
+            )}
+
+            {/* Display polygon stats */}
+            <div className="text-sm mb-4">
+              <p>
+                <strong>Total Pins in Polygon:</strong> {pinCount}
+              </p>
+              {userCounts.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {userCounts.map((uc, idx) => {
+                    // If there's no user, or user_id is null
+                    if (!uc.the_user_id) {
+                      return (
+                        <li key={`unassigned-${idx}`}>
+                          No assigned user: {uc.total} pin(s)
+                        </li>
+                      );
+                    }
+                    // If user is assigned, show name if available
+                    const name = (uc.first_name && uc.last_name)
+                      ? `${uc.first_name} ${uc.last_name}`
+                      : `Unknown user (${uc.the_user_id})`;
+                    return (
+                      <li key={uc.the_user_id}>
+                        {name} - {uc.total} pin(s)
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            {/* User dropdown */}
+            <label className="block mb-2 text-sm">
+              Select User to Assign Leads:
+              <select
+                value={selectedUserId || ""}
+                onChange={(e) => setSelectedUserId(e.target.value)}
+                className="w-full mt-1 p-2 bg-gray-800 text-white rounded"
+              >
+                <option value="" disabled>
+                  Select a user
+                </option>
+                {users.map((user) => (
+                  <option key={user.user_id} value={user.user_id}>
+                    {user.first_name} {user.last_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              onClick={handleAssign}
+              disabled={isAssigning}
+              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded disabled:opacity-50"
+            >
+              {isAssigning ? "Assigning..." : "Assign"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div
+          className="flex items-center p-4 hover:bg-gray-800 cursor-pointer"
+          onClick={toggleModal}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M4 6h16M4 12h16M4 18h16"
+            />
+          </svg>
+          <span className="ml-2 text-sm">Assign Leads</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/components/FilterModal.jsx
+"use client";
+
+import { useEffect, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
+
+export default function FilterModal({
+  isExpanded = false,
+  onToggle,
+  onApplyFilters
+}) {
+  const supabase = createClient();
+  const [columns, setColumns] = useState([]);
+  const [selectedFilters, setSelectedFilters] = useState([]);
+  const [availableOperators] = useState(["=", "!=", ">", "<", ">=", "<=", "LIKE"]);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (isExpanded) {
+      fetchColumns();
+    }
+  }, [isExpanded]);
+
+  async function fetchColumns() {
+    try {
+      setIsLoading(true);
+      setErrorMessage("");
+
+      const response = await fetch("/api/restaurantColumns");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to fetch columns.");
+      }
+      const data = await response.json();
+      setColumns(data.columns);
+    } catch (error) {
+      console.error("Error fetching columns:", error);
+      setErrorMessage(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function addFilter() {
+    setSelectedFilters((prev) => [...prev, { column: "", operator: "=", value: "" }]);
+  }
+
+  function removeFilter(index) {
+    setSelectedFilters((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function applyFilters() {
+    onApplyFilters && onApplyFilters(selectedFilters);
+    onToggle && onToggle(false);
+  }
+
+  function cancelFilters() {
+    onToggle && onToggle(false);
+  }
+
+  return (
+    <div
+      className={`fixed z-50 right-4 top-4 bg-gray-900 text-white rounded-lg shadow-lg transition-all duration-300 overflow-hidden flex flex-col ${
+        isExpanded ? "w-80" : "w-0"
+      }`}
+      style={{ height: "90vh" }}
+    >
+      {isExpanded ? (
+        <>
+          <div className="flex items-center justify-between p-4">
+            <h2 className="text-lg font-semibold">Filter Leads</h2>
+            <button onClick={() => onToggle && onToggle(false)} className="p-1 hover:bg-gray-700 rounded">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path
+                  fillRule="evenodd"
+                  d="M10 8.586L15.95 2.636l1.414 1.414L11.414 10l5.95 5.95-1.414 1.414L10 11.414l-5.95 5.95-1.414-1.414L8.586 10 2.636 4.05l1.414-1.414L10 8.586z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          </div>
+          <div className="border-t border-gray-700"></div>
+          <div className="p-4 flex-1 overflow-y-auto scroll-container">
+            {errorMessage ? (
+              <p className="text-red-500">{errorMessage}</p>
+            ) : isLoading ? (
+              <p>Loading columns...</p>
+            ) : (
+              <div className="space-y-4">
+                {selectedFilters.map((filter, index) => (
+                  <div key={index} className="flex items-center space-x-2">
+                    <select
+                      value={filter.column}
+                      onChange={(e) => {
+                        const newFilters = [...selectedFilters];
+                        newFilters[index].column = e.target.value;
+                        setSelectedFilters(newFilters);
+                      }}
+                      className="w-1/3 px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-md focus:outline-none focus:ring focus:border-blue-500"
+                    >
+                      <option value="" disabled>
+                        Select column
+                      </option>
+                      {columns.map((column) => (
+                        <option key={column} value={column}>
+                          {column}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={filter.operator}
+                      onChange={(e) => {
+                        const newFilters = [...selectedFilters];
+                        newFilters[index].operator = e.target.value;
+                        setSelectedFilters(newFilters);
+                      }}
+                      className="w-1/4 px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-md focus:outline-none focus:ring focus:border-blue-500"
+                    >
+                      {availableOperators.map((op) => (
+                        <option key={op} value={op}>
+                          {op}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={filter.value}
+                      onChange={(e) => {
+                        const newFilters = [...selectedFilters];
+                        newFilters[index].value = e.target.value;
+                        setSelectedFilters(newFilters);
+                      }}
+                      placeholder="Value"
+                      className="w-1/3 px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-md focus:outline-none focus:ring focus:border-blue-500"
+                    />
+                    <button onClick={() => removeFilter(index)} className="text-red-500 hover:text-red-700">
+                      &times;
+                    </button>
+                  </div>
+                ))}
+                <button onClick={addFilter} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-500">
+                  Add Filter
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="border-t border-gray-700"></div>
+          <div className="p-4 flex justify-end space-x-2">
+            <button
+              onClick={cancelFilters}
+              className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={applyFilters}
+              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-500"
+            >
+              Apply
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center p-4 hover:bg-gray-800 cursor-pointer" onClick={() => onToggle && onToggle(true)}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path /* Just a placeholder icon */ strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M..." />
+          </svg>
+          <span className="ml-2 text-sm">Filter</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/components/form-message.tsx
+export type Message =
+  | { success: string }
+  | { error: string }
+  | { message: string };
+
+export function FormMessage({ message }: { message: Message }) {
+  return (
+    <div className="flex flex-col gap-2 w-full max-w-md text-sm">
+      {"success" in message && (
+        <div className="text-foreground border-l-2 border-foreground px-4">
+          {message.success}
+        </div>
+      )}
+      {"error" in message && (
+        <div className="text-destructive-foreground border-l-2 border-destructive-foreground px-4">
+          {message.error}
+        </div>
+      )}
+      {"message" in message && (
+        <div className="text-foreground border-l-2 px-4">{message.message}</div>
+      )}
+    </div>
+  );
+}
+
+
+/components/GoogleMap.jsx
+"use client";
+
+import { useEffect } from "react";
+
+// This component doesn't fetch from Supabase; it just loads Google Maps.
+// No changes to Supabase usage here.
+
+export default function GoogleMap({ clusters = [] }) {
+  let map;
+  let markers = [];
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+  async function loadGoogleMaps(apiKey) {
+    return new Promise((resolve, reject) => {
+      if (typeof window === "undefined") {
+        reject(new Error("Window is undefined"));
+        return;
+      }
+
+      if (window.google && window.google.maps) {
+        resolve();
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = (e) => reject(e);
+      document.head.appendChild(script);
+    });
+  }
+
+  function clearMarkers() {
+    markers.forEach((marker) => marker.setMap(null));
+    markers = [];
+  }
+
+  function addMarkers(clusterData) {
+    clusterData.forEach((cluster) => {
+      const marker = new window.google.maps.Marker({
+        position: { lat: cluster.latitude, lng: cluster.longitude },
+        map: map,
+        label: {
+          text: String(cluster.count),
+          color: "white",
+          fontSize: "12px",
+          fontWeight: "bold"
+        },
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          fillColor: "#007bff",
+          fillOpacity: 0.6,
+          scale: Math.max(20, Math.min(cluster.count / 100, 50)),
+          strokeColor: "#fff",
+          strokeWeight: 1
+        }
+      });
+
+      marker.addListener("click", () => {
+        map.setZoom(map.getZoom() + 2);
+        map.setCenter(marker.getPosition());
+      });
+
+      markers.push(marker);
+    });
+  }
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        await loadGoogleMaps(apiKey);
+        if (!isMounted) return;
+
+        const mapElement = document.getElementById("map");
+        map = new window.google.maps.Map(mapElement, {
+          center: { lat: 39.5, lng: -98.35 },
+          zoom: 4,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          zoomControl: false
+        });
+
+        addMarkers(clusters);
+      } catch (error) {
+        console.error("Error loading Google Maps:", error);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      clearMarkers();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return <div id="map" style={{ width: "100%", height: "100vh" }} />;
+}
+
+
+/components/Sidebar.jsx
+"use client";
+
+import { useState } from "react";
+
+export default function Sidebar({ isExpanded = false, onToggle }) {
+  // This component does not fetch from Supabase directly, no changes needed.
+  // It just shows/hides navigation links.
+  
+  const menuItems = [
+    { name: "Map", route: "/protected/map" },
+    { name: "Import", route: "/protected/import" },
+    { name: "Onboard", route: "/protected/onboard" },
+    { name: "View Reports", route: "/protected/reports" }
+  ];
+
+  function toggleSidebar() {
+    onToggle && onToggle(!isExpanded);
+  }
+
+  return (
+    <div
+      className={`fixed z-50 left-4 top-4 bg-gray-900 text-white rounded-lg shadow-lg transition-all duration-300 ${
+        isExpanded ? "w-64" : "w-auto"
+      } overflow-hidden`}
+    >
+      {isExpanded ? (
+        <>
+          <div className="flex items-center justify-between p-2">
+            <h1 className="text-sm font-semibold">Navigation</h1>
+            <button onClick={toggleSidebar} className="p-1 hover:bg-gray-700 rounded">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path
+                  fillRule="evenodd"
+                  d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          </div>
+          <div className="border-t border-gray-700 mt-1"></div>
+          <div className="max-h-32 overflow-y-auto">
+            {menuItems
+              .filter((item) => item.route !== (typeof window !== 'undefined' ? window.location.pathname : ''))
+              .map((item) => (
+                <div key={item.route} className="flex items-center p-2 hover:bg-gray-800 cursor-pointer text-sm">
+                  <a href={item.route} className="w-full text-white">
+                    {item.name}
+                  </a>
+                </div>
+              ))}
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center p-2 hover:bg-gray-800 cursor-pointer" onClick={toggleSidebar}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+          <span className="ml-2 text-sm">Navigation</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/components/submit-button.tsx
+"use client";
+
+import { Button } from "@/components/ui/button";
+import { type ComponentProps } from "react";
+import { useFormStatus } from "react-dom";
+
+type Props = ComponentProps<typeof Button> & {
+  pendingText?: string;
+};
+
+export function SubmitButton({
+  children,
+  pendingText = "Submitting...",
+  ...props
+}: Props) {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button type="submit" aria-disabled={pending} {...props}>
+      {pending ? pendingText : children}
+    </Button>
+  );
+}
+
+
+/components/Territory.jsx
+"use client";
+
+import { useEffect, useState, useRef } from "react";
+import { createClient as createSupabaseClient } from "@/utils/supabase/client";
+import { createClient as createSupabaseAnonClient } from "@supabase/supabase-js";
+
+const ZOOM_THRESHOLD = 12;
+const DEFAULT_COLOR = "#FF0000";
+
+// If you are an ai rewriting this file make sure you write these hard-coded env variables back in full
+// do not abbreviate them in any way or leave any bit of them out
+const supabaseAnon = createSupabaseAnonClient(
+  "https://bdjxxtvhbfqgnwbuhzfo.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkanh4dHZoYmZxZ253YnVoemZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ1NTg2NjUsImV4cCI6MjA1MDEzNDY2NX0.n3lB7-JQAkrV06-RJ8vBTb019tWElhEw-iGis4Qla5U"
+);
+
+export default function Territory({
+  isExpanded = true,
+  territories = [],
+  onToggle,
+  map,
+}) {
+  const supabase = createSupabaseClient();
+
+  const [displayTerritories, setDisplayTerritories] = useState([]);
+  const [isAdding, setIsAdding] = useState(false);
+  const [territoryName, setTerritoryName] = useState("");
+  const [color, setColor] = useState(DEFAULT_COLOR);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTerritory, setSelectedTerritory] = useState(null);
+  const [addMode, setAddMode] = useState("draw");
+  const [zipCodeQuery, setZipCodeQuery] = useState("");
+  const [polygonCoordinates, setPolygonCoordinates] = useState([]);
+
+  const territoryPolygonsRef = useRef([]);
+  const individualMarkersRef = useRef([]);
+  const zoomListenerRef = useRef(null);
+  const drawingManagerRef = useRef(null);
+  const drawnPolygonRef = useRef(null);
+
+  // Keep local copy of the territories
+  useEffect(() => setDisplayTerritories(territories), [territories]);
+
+  // Redraw territories if they change, or if we stop adding
+  useEffect(() => {
+    if (map && !isAdding) drawAllTerritories();
+  }, [displayTerritories, isAdding, map]);
+
+  // Update drawn polygon's color if `color` changes
+  useEffect(() => {
+    if (drawingManagerRef.current) {
+      drawingManagerRef.current.setOptions({
+        polygonOptions: polygonOptions(color, true),
+      });
+    }
+    if (drawnPolygonRef.current) {
+      drawnPolygonRef.current.setOptions({
+        fillColor: color,
+        strokeColor: color,
+      });
+    }
+  }, [color]);
+
+  // Manage when we’re in "draw" mode
+  useEffect(() => {
+    if (isAdding && addMode === "draw") startDrawingMode();
+    else if (!isAdding) stopDrawingMode(false);
+  }, [isAdding, addMode]);
+
+  function polygonOptions(c, editable) {
+    return {
+      fillColor: c,
+      fillOpacity: 0.35,
+      strokeColor: c,
+      strokeOpacity: 0.8,
+      strokeWeight: 2,
+      editable,
+    };
+  }
+
+  function clearMarkers() {
+    individualMarkersRef.current.forEach((m) => m.setMap(null));
+    individualMarkersRef.current = [];
+  }
+
+  function removeZoomListener() {
+    if (zoomListenerRef.current) {
+      google.maps.event.removeListener(zoomListenerRef.current);
+      zoomListenerRef.current = null;
+    }
+  }
+
+  function clearTerritoryPolygons() {
+    territoryPolygonsRef.current.forEach((p) => p.setMap(null));
+    territoryPolygonsRef.current = [];
+  }
+
+  function drawAllTerritories() {
+    if (!map) return;
+    clearTerritoryPolygons();
+
+    const territoryClickInfoWindow = new google.maps.InfoWindow();
+
+    displayTerritories.forEach((t) => {
+      if (!t.geom || !t.geom.coordinates) return;
+      const coords = t.geom.coordinates[0].map(([lng, lat]) => ({ lat, lng }));
+      const polygon = new google.maps.Polygon({
+        paths: coords,
+        fillColor: t.color || DEFAULT_COLOR,
+        fillOpacity: 0.35,
+        strokeColor: t.color || DEFAULT_COLOR,
+        strokeOpacity: 0.8,
+        strokeWeight: 2,
+        editable: false,
+        map,
+      });
+
+      // On polygon click: show popup immediately, then fetch total
+      polygon.addListener("click", (event) => {
+        territoryClickInfoWindow.close();
+
+        // 1) Show the territory name + spinner right away
+        const instantHtml = `
+          <div style="min-width:200px;padding:8px;background:#fff;color:#000;border-radius:6px;">
+            <div style="font-weight:bold;margin-bottom:6px;">${t.name}</div>
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+              <div style="
+                width:24px;
+                height:24px;
+                border:3px solid #999;
+                border-top-color:transparent;
+                border-radius:50%;
+                animation:spin 1s linear infinite;
+                ">
+              </div>
+              <p style="font-size:0.8rem;margin-top:6px;">Loading...</p>
+            </div>
+          </div>
+        `;
+        territoryClickInfoWindow.setContent(instantHtml);
+        territoryClickInfoWindow.setPosition(event.latLng);
+        territoryClickInfoWindow.open({ map });
+
+        // 2) Kick off fetch in background
+        (async () => {
+          try {
+            const res = await fetch("/api/territoryStats", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ coordinates: coords }),
+            });
+            let total = 0;
+            if (res.ok) {
+              const json = await res.json();
+              total = json.total || 0;
+            }
+
+            // 3) Once data arrives, update the popup content
+            const finalHtml = `
+              <div style="min-width:200px;padding:8px;background:#fff;color:#000;border-radius:6px;">
+                <div style="font-weight:bold;margin-bottom:6px;">${t.name}</div>
+                <div style="margin-bottom:8px;">
+                  Total Leads: ${total}
+                </div>
+              </div>
+            `;
+            // Update InfoWindow
+            territoryClickInfoWindow.setContent(finalHtml);
+          } catch (err) {
+            console.error("Error fetching territory stats:", err);
+            territoryClickInfoWindow.setContent(`
+              <div style="min-width:200px;padding:8px;background:#fff;color:#000;border-radius:6px;">
+                <div style="font-weight:bold;margin-bottom:6px;">${t.name}</div>
+                <div style="color:red;">Failed to load data.</div>
+              </div>
+            `);
+          }
+        })();
+      });
+
+      territoryPolygonsRef.current.push(polygon);
+    });
+  }
+
+  // Possibly fetch individual markers if zoom is high enough
+  async function fetchIndividualsForCurrentBounds(expansionFactor = 3) {
+    if (!map) return;
+    const bounds = map.getBounds();
+    if (!bounds) return;
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    const dLat = ne.lat() - sw.lat();
+    const dLng = ne.lng() - sw.lng();
+    const minLat = sw.lat() - dLat * (expansionFactor - 1);
+    const minLon = sw.lng() - dLng * (expansionFactor - 1);
+    const maxLat = ne.lat() + dLat * (expansionFactor - 1);
+    const maxLon = ne.lng() + dLng * (expansionFactor - 1);
+
+    try {
+      const res = await fetch(
+        `/api/restaurants?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}`
+      );
+      if (!res.ok) throw new Error("Failed to fetch individuals");
+      const { restaurants } = await res.json();
+      clearMarkers();
+      (restaurants || []).forEach((r) => {
+        const lat = parseFloat(r.latitude);
+        const lng = parseFloat(r.longitude);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          individualMarkersRef.current.push(
+            new google.maps.Marker({ position: { lat, lng }, map })
+          );
+        }
+      });
+      removeZoomListener();
+      zoomListenerRef.current = google.maps.event.addListener(
+        map,
+        "zoom_changed",
+        () => {
+          if (map.getZoom() < ZOOM_THRESHOLD) {
+            clearMarkers();
+            removeZoomListener();
+          }
+        }
+      );
+    } catch (err) {
+      console.error("Error fetching individuals:", err);
+    }
+  }
+
+  // Clicking territory name in sidebar => zoom to polygon
+  function handleTerritoryClick(territory) {
+    setSelectedTerritory(territory);
+    if (!map || !territory.geom || !territory.geom.coordinates) return;
+    const bounds = new google.maps.LatLngBounds();
+    territory.geom.coordinates[0].forEach(([lng, lat]) =>
+      bounds.extend({ lat, lng })
+    );
+    map.fitBounds(bounds);
+
+    google.maps.event.addListenerOnce(map, "idle", async () => {
+      const z = map.getZoom();
+      if (z >= ZOOM_THRESHOLD) await fetchIndividualsForCurrentBounds(3);
+      else clearMarkers();
+    });
+  }
+
+  // Cancel territory creation
+  function cancelAdd() {
+    setIsAdding(false);
+    setPolygonCoordinates([]);
+    setTerritoryName("");
+    setColor(DEFAULT_COLOR);
+    setZipCodeQuery("");
+    stopDrawingMode(true);
+  }
+
+  // Save new territory to DB
+  async function saveNewTerritory() {
+    if (!territoryName.trim()) {
+      alert("Please provide a territory name.");
+      return;
+    }
+    if (!polygonCoordinates || polygonCoordinates.length < 3) {
+      alert("Please draw or provide a valid polygon.");
+      return;
+    }
+
+    const newTempId = `temp-${Date.now()}`;
+    const newTerritory = {
+      id: newTempId,
+      name: territoryName,
+      color,
+      geom: {
+        type: "Polygon",
+        coordinates: [polygonCoordinates.map((coord) => [coord.lng, coord.lat])],
+      },
+    };
+    setDisplayTerritories((prev) => [...prev, newTerritory]);
+
+    try {
+      const body = {
+        name: territoryName,
+        color,
+        coordinates: polygonCoordinates,
+      };
+      if (addMode === "zip" && zipCodeQuery.trim()) {
+        body.zipCode = zipCodeQuery.trim();
+      }
+
+      const res = await fetch("/api/saveTerritory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        console.error("Failed to save territory:", data);
+        alert("Failed to save territory.");
+        setDisplayTerritories((prev) =>
+          prev.filter((t) => t.id !== newTempId)
+        );
+        return;
+      }
+
+      const { data } = await res.json();
+      if (data && data.length > 0) {
+        const finalTerritory = data[0];
+        setDisplayTerritories((prev) =>
+          prev.map((t) => (t.id === newTempId ? finalTerritory : t))
+        );
+        setSelectedTerritory(finalTerritory);
+        if (drawnPolygonRef.current) {
+          drawnPolygonRef.current.setMap(null);
+          drawnPolygonRef.current = null;
+        }
+      }
+
+      alert("Territory saved successfully.");
+      setIsAdding(false);
+      setPolygonCoordinates([]);
+      stopDrawingMode(true);
+    } catch (err) {
+      console.error("Error saving territory:", err);
+      alert("Error saving territory.");
+    }
+  }
+
+  // Start polygon drawing
+  function startDrawingMode() {
+    if (!map || !google?.maps?.drawing) return;
+    stopDrawingMode(true);
+    drawingManagerRef.current = new google.maps.drawing.DrawingManager({
+      drawingMode: google.maps.drawing.OverlayType.POLYGON,
+      drawingControl: false,
+      polygonOptions: polygonOptions(color, true),
+    });
+    drawingManagerRef.current.setMap(map);
+    google.maps.event.addListener(
+      drawingManagerRef.current,
+      "overlaycomplete",
+      (e) => {
+        if (e.type === google.maps.drawing.OverlayType.POLYGON) {
+          if (drawnPolygonRef.current) drawnPolygonRef.current.setMap(null);
+          drawnPolygonRef.current = e.overlay;
+          drawingManagerRef.current.setDrawingMode(null);
+          updatePolygonCoordinates();
+          attachPolygonListeners(drawnPolygonRef.current);
+        }
+      }
+    );
+  }
+
+  // Listen for changes to the drawn polygon so we can update coords
+  function attachPolygonListeners(polygon) {
+    const path = polygon.getPath();
+    google.maps.event.addListener(path, "set_at", updatePolygonCoordinates);
+    google.maps.event.addListener(path, "insert_at", updatePolygonCoordinates);
+    google.maps.event.addListener(path, "remove_at", updatePolygonCoordinates);
+  }
+
+  // Stop polygon drawing
+  function stopDrawingMode(removePolygon) {
+    if (drawingManagerRef.current) {
+      drawingManagerRef.current.setMap(null);
+      drawingManagerRef.current = null;
+    }
+    if (removePolygon && drawnPolygonRef.current) {
+      drawnPolygonRef.current.setMap(null);
+      drawnPolygonRef.current = null;
+    }
+  }
+
+  // Capture new polygon coords
+  function updatePolygonCoordinates() {
+    if (!drawnPolygonRef.current) return;
+    const path = drawnPolygonRef.current.getPath();
+    const coords = [];
+    for (let i = 0; i < path.getLength(); i++) {
+      const latLng = path.getAt(i);
+      coords.push({ lat: latLng.lat(), lng: latLng.lng() });
+    }
+    setPolygonCoordinates(coords);
+  }
+
+  // For "zip" mode: look up geometry from your "zctas" table
+  function parseWktPolygon(wkt) {
+    const inner = wkt.replace(/^POLYGON\s*\(\(|\)\)$/g, "");
+    return inner.split(",").map((pair) => {
+      const [lng, lat] = pair.trim().split(/\s+/).map(Number);
+      return { lat, lng };
+    });
+  }
+
+  async function handleZipSearch() {
+    if (!zipCodeQuery.trim()) {
+      alert("Please enter a zip code.");
+      return;
+    }
+
+    try {
+      const { data, error } = await supabaseAnon
+        .from("zctas")
+        .select("*")
+        .eq("ZCTA5CE20", zipCodeQuery.trim())
+        .single();
+
+      if (error || !data) {
+        console.error("No polygon found for that zip code:", error);
+        alert("No polygon found for that zip code.");
+        return;
+      }
+
+      if (!data.geometry || !data.geometry.startsWith("POLYGON")) {
+        alert("No valid polygon found for that zip code.");
+        return;
+      }
+
+      const poly = parseWktPolygon(data.geometry);
+      if (!poly || poly.length < 3) {
+        alert("Polygon not valid for that zip code.");
+        return;
+      }
+
+      setPolygonCoordinates(poly);
+      if (drawnPolygonRef.current) drawnPolygonRef.current.setMap(null);
+      if (map) {
+        drawnPolygonRef.current = new google.maps.Polygon({
+          ...polygonOptions(color, true),
+          paths: poly,
+          map,
+        });
+        attachPolygonListeners(drawnPolygonRef.current);
+      }
+    } catch (err) {
+      console.error("Error searching zip code:", err);
+      alert("Error searching zip code.");
+    }
+  }
+
+  // Filter by territory name
+  const filteredTerritories = displayTerritories.filter((t) =>
+    t.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <div
+      className={`fixed z-50 right-4 top-4 bg-gray-900 text-white rounded-lg shadow-lg transition-all duration-300 flex flex-col ${
+        isExpanded ? "w-80" : "w-0"
+      }`}
+      style={{ height: "90vh" }}
+    >
+      {isExpanded ? (
+        <>
+          <div className="flex items-center justify-between p-4">
+            <h2 className="text-lg font-semibold">
+              {selectedTerritory
+                ? selectedTerritory.name
+                : isAdding
+                ? "Add New Territory"
+                : "Territory Management"}
+            </h2>
+            <button
+              onClick={() => onToggle && onToggle(false)}
+              className="p-1 hover:bg-gray-700 rounded"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 8.586L15.95 2.636l1.414 1.414L11.414 10l5.95 5.95-1.414 1.414L10 11.414l-5.95 5.95-1.414-1.414L8.586 10 2.636 4.05l1.414-1.414L10 8.586z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          </div>
+          <div className="border-t border-gray-700"></div>
+          <div className="p-4 flex-1 overflow-y-auto scroll-container">
+            {selectedTerritory ? (
+              <div className="space-y-4">
+                <button
+                  onClick={() => setSelectedTerritory(null)}
+                  className="flex items-center text-gray-300 hover:text-white"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5 mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M15 19l-7-7 7-7"
+                    />
+                  </svg>
+                  Back to List
+                </button>
+                <div>
+                  <h3 className="text-md font-medium">
+                    Details for {selectedTerritory.name}
+                  </h3>
+                  <p className="text-sm text-gray-400">
+                    Stats and other info about this territory.
+                  </p>
+                </div>
+              </div>
+            ) : isAdding ? (
+              <div className="p-4 space-y-4">
+                <h3 className="text-md font-medium">Add New Territory</h3>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setAddMode("draw")}
+                    className={`px-3 py-1 rounded text-white ${
+                      addMode === "draw"
+                        ? "bg-blue-600"
+                        : "bg-gray-700 hover:bg-gray-600"
+                    }`}
+                  >
+                    Draw
+                  </button>
+                  <button
+                    onClick={() => setAddMode("zip")}
+                    className={`px-3 py-1 rounded text-white ${
+                      addMode === "zip"
+                        ? "bg-blue-600"
+                        : "bg-gray-700 hover:bg-gray-600"
+                    }`}
+                  >
+                    Zip Code
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300">
+                    Territory Name
+                  </label>
+                  <input
+                    type="text"
+                    value={territoryName}
+                    onChange={(e) => setTerritoryName(e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-md"
+                    placeholder="Enter territory name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300">
+                    Territory Color
+                  </label>
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="mt-1 block w-full h-10 p-0 border-0"
+                  />
+                </div>
+
+                {addMode === "zip" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300">
+                      Zip Code
+                    </label>
+                    <div className="flex space-x-2 mt-1">
+                      <input
+                        type="text"
+                        value={zipCodeQuery}
+                        onChange={(e) => setZipCodeQuery(e.target.value)}
+                        className="flex-1 px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-md"
+                        placeholder="Enter zip code"
+                      />
+                      <button
+                        onClick={handleZipSearch}
+                        className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-500"
+                      >
+                        Search
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end space-x-2">
+                  <button
+                    onClick={cancelAdd}
+                    className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveNewTerritory}
+                    className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-500"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col space-y-4">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-md font-medium">Existing Territories</h3>
+                  <button
+                    onClick={() => {
+                      onToggle && onToggle(true);
+                      setIsAdding(true);
+                      setSelectedTerritory(null);
+                      clearMarkers();
+                      removeZoomListener();
+                      setAddMode("draw");
+                      setColor(DEFAULT_COLOR);
+                    }}
+                    className="px-2 py-1 bg-green-500 text-white rounded hover:bg-green-400 text-sm"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search territories..."
+                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-md"
+                  />
+                </div>
+                {filteredTerritories.length > 0 ? (
+                  <ul className="space-y-3">
+                    {filteredTerritories.map((territory) => (
+                      <li
+                        key={territory.id}
+                        className="flex items-center justify-between p-2 bg-gray-800 rounded cursor-pointer hover:bg-gray-700"
+                        onClick={() => {
+                          clearMarkers();
+                          removeZoomListener();
+                          handleTerritoryClick(territory);
+                        }}
+                      >
+                        <div className="flex items-center">
+                          <span
+                            className="w-4 h-4 rounded-full mr-2"
+                            style={{ backgroundColor: territory.color }}
+                          ></span>
+                          <span>{territory.name}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-gray-400 text-sm">No territories found.</p>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <div
+          className="flex items-center p-4 hover:bg-gray-800 cursor-pointer"
+          onClick={() => onToggle && onToggle(true)}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+          >
+            <path d="M..." />
+          </svg>
+          <span className="ml-2 text-sm">Territory</span>
+        </div>
+      )}
+
+      {/* A quick inline style for the spinner animation */}
+      <style jsx>{`
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        .scroll-container::-webkit-scrollbar {
+          width: 6px;
+        }
+        .scroll-container::-webkit-scrollbar-track {
+          background: #1f2937;
+        }
+        .scroll-container::-webkit-scrollbar-thumb {
+          background: #374151;
+          border-radius: 3px;
+        }
+        .scroll-container:hover::-webkit-scrollbar-thumb {
+          background: #4b5563;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+
+/components/Toolbar.jsx
+"use client";
+
+export default function Toolbar({
+  isDrawingMode = false,
+  onPan,
+  onFilterLeads,
+  onToggleTerritoryMode,
+  onAssignLeads,
+  onCreateLead
+}) {
+  // No Supabase interaction here, no changes needed.
+  
+  const buttons = [
+    {
+      icon: "/pan.png",
+      alt: "Pan",
+      tooltip: "Pan",
+      event: onPan,
+      class: "w-10 h-10 bg-blue-600"
+    },
+    {
+      icon: "/filter.png",
+      alt: "Filter Leads",
+      tooltip: "Filter Leads",
+      event: onFilterLeads,
+      class: "w-8 h-8 bg-gray-600"
+    },
+    {
+      icon: "/territory.png",
+      alt: "Territory",
+      tooltip: "Territory",
+      event: onToggleTerritoryMode,
+      class: "w-8 h-8 bg-gray-600"
+    },
+    {
+      icon: "/assign.png",
+      alt: "Assign Leads",
+      tooltip: "Assign Leads",
+      event: onAssignLeads,
+      class: "w-8 h-8 bg-gray-600"
+    },
+    {
+      icon: "/newpin.png",
+      alt: "Create Lead",
+      tooltip: "Create Lead",
+      event: onCreateLead,
+      class: "w-8 h-8 bg-gray-600"
+    }
+  ];
+
+  return (
+    <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white flex items-center justify-between w-[400px] h-12 rounded-full shadow-lg px-4">
+      {buttons.map((button, index) => (
+        <div key={index} className="relative">
+          <button
+            className={`flex items-center justify-center ${button.class} rounded-full focus:outline-none`}
+            onClick={button.event}
+          >
+            <img
+              src={button.icon}
+              alt={button.alt}
+              className={button.icon === "/pan.png" ? "h-6 w-6" : "h-4 w-4"}
+            />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+/components/typography/inline-code.tsx
+export function TypographyInlineCode() {
+  return (
+    <code className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold">
+      @radix-ui/react-alert-dialog
+    </code>
+  );
+}
+
+
+/components/ui/badge.tsx
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+
+import { cn } from "@/lib/utils";
+
+const badgeVariants = cva(
+  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  {
+    variants: {
+      variant: {
+        default:
+          "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
+        secondary:
+          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        destructive:
+          "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
+        outline: "text-foreground",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  },
+);
+
+export interface BadgeProps
+  extends React.HTMLAttributes<HTMLDivElement>,
+    VariantProps<typeof badgeVariants> {}
+
+function Badge({ className, variant, ...props }: BadgeProps) {
+  return (
+    <div className={cn(badgeVariants({ variant }), className)} {...props} />
+  );
+}
+
+export { Badge, badgeVariants };
+
+
+/components/ui/button.tsx
+import * as React from "react";
+import { Slot } from "@radix-ui/react-slot";
+import { cva, type VariantProps } from "class-variance-authority";
+
+import { cn } from "@/lib/utils";
+
+const buttonVariants = cva(
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        destructive:
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        outline:
+          "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+        secondary:
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost: "hover:bg-accent hover:text-accent-foreground",
+        link: "text-primary underline-offset-4 hover:underline",
+      },
+      size: {
+        default: "h-10 px-4 py-2",
+        sm: "h-9 rounded-md px-3",
+        lg: "h-11 rounded-md px-8",
+        icon: "h-10 w-10",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  },
+);
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
+  asChild?: boolean;
+}
+
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, asChild = false, ...props }, ref) => {
+    const Comp = asChild ? Slot : "button";
+    return (
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        {...props}
+      />
+    );
+  },
+);
+Button.displayName = "Button";
+
+export { Button, buttonVariants };
+
+
+/components/ui/checkbox.tsx
+"use client";
+
+import * as React from "react";
+import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
+import { Check } from "lucide-react";
+
+import { cn } from "@/lib/utils";
+
+const Checkbox = React.forwardRef<
+  React.ElementRef<typeof CheckboxPrimitive.Root>,
+  React.ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root>
+>(({ className, ...props }, ref) => (
+  <CheckboxPrimitive.Root
+    ref={ref}
+    className={cn(
+      "peer h-4 w-4 shrink-0 rounded-sm border border-primary ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
+      className,
+    )}
+    {...props}
+  >
+    <CheckboxPrimitive.Indicator
+      className={cn("flex items-center justify-center text-current")}
+    >
+      <Check className="h-4 w-4" />
+    </CheckboxPrimitive.Indicator>
+  </CheckboxPrimitive.Root>
+));
+Checkbox.displayName = CheckboxPrimitive.Root.displayName;
+
+export { Checkbox };
+
+
+/components/ui/dropdown-menu.tsx
+"use client";
+
+import * as React from "react";
+import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
+import { Check, ChevronRight, Circle } from "lucide-react";
+
+import { cn } from "@/lib/utils";
+
+const DropdownMenu = DropdownMenuPrimitive.Root;
+
+const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
+
+const DropdownMenuGroup = DropdownMenuPrimitive.Group;
+
+const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
+
+const DropdownMenuSub = DropdownMenuPrimitive.Sub;
+
+const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
+
+const DropdownMenuSubTrigger = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.SubTrigger>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubTrigger> & {
+    inset?: boolean;
+  }
+>(({ className, inset, children, ...props }, ref) => (
+  <DropdownMenuPrimitive.SubTrigger
+    ref={ref}
+    className={cn(
+      "flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent data-[state=open]:bg-accent",
+      inset && "pl-8",
+      className,
+    )}
+    {...props}
+  >
+    {children}
+    <ChevronRight className="ml-auto h-4 w-4" />
+  </DropdownMenuPrimitive.SubTrigger>
+));
+DropdownMenuSubTrigger.displayName =
+  DropdownMenuPrimitive.SubTrigger.displayName;
+
+const DropdownMenuSubContent = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.SubContent>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
+>(({ className, ...props }, ref) => (
+  <DropdownMenuPrimitive.SubContent
+    ref={ref}
+    className={cn(
+      "z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+      className,
+    )}
+    {...props}
+  />
+));
+DropdownMenuSubContent.displayName =
+  DropdownMenuPrimitive.SubContent.displayName;
+
+const DropdownMenuContent = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
+>(({ className, sideOffset = 4, ...props }, ref) => (
+  <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPrimitive.Content
+      ref={ref}
+      sideOffset={sideOffset}
+      className={cn(
+        "z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+        className,
+      )}
+      {...props}
+    />
+  </DropdownMenuPrimitive.Portal>
+));
+DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName;
+
+const DropdownMenuItem = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.Item>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
+    inset?: boolean;
+  }
+>(({ className, inset, ...props }, ref) => (
+  <DropdownMenuPrimitive.Item
+    ref={ref}
+    className={cn(
+      "relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      inset && "pl-8",
+      className,
+    )}
+    {...props}
+  />
+));
+DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName;
+
+const DropdownMenuCheckboxItem = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.CheckboxItem>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.CheckboxItem>
+>(({ className, children, checked, ...props }, ref) => (
+  <DropdownMenuPrimitive.CheckboxItem
+    ref={ref}
+    className={cn(
+      "relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      className,
+    )}
+    checked={checked}
+    {...props}
+  >
+    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+      <DropdownMenuPrimitive.ItemIndicator>
+        <Check className="h-4 w-4" />
+      </DropdownMenuPrimitive.ItemIndicator>
+    </span>
+    {children}
+  </DropdownMenuPrimitive.CheckboxItem>
+));
+DropdownMenuCheckboxItem.displayName =
+  DropdownMenuPrimitive.CheckboxItem.displayName;
+
+const DropdownMenuRadioItem = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.RadioItem>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.RadioItem>
+>(({ className, children, ...props }, ref) => (
+  <DropdownMenuPrimitive.RadioItem
+    ref={ref}
+    className={cn(
+      "relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      className,
+    )}
+    {...props}
+  >
+    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+      <DropdownMenuPrimitive.ItemIndicator>
+        <Circle className="h-2 w-2 fill-current" />
+      </DropdownMenuPrimitive.ItemIndicator>
+    </span>
+    {children}
+  </DropdownMenuPrimitive.RadioItem>
+));
+DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName;
+
+const DropdownMenuLabel = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.Label>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Label> & {
+    inset?: boolean;
+  }
+>(({ className, inset, ...props }, ref) => (
+  <DropdownMenuPrimitive.Label
+    ref={ref}
+    className={cn(
+      "px-2 py-1.5 text-sm font-semibold",
+      inset && "pl-8",
+      className,
+    )}
+    {...props}
+  />
+));
+DropdownMenuLabel.displayName = DropdownMenuPrimitive.Label.displayName;
+
+const DropdownMenuSeparator = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.Separator>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>
+>(({ className, ...props }, ref) => (
+  <DropdownMenuPrimitive.Separator
+    ref={ref}
+    className={cn("-mx-1 my-1 h-px bg-muted", className)}
+    {...props}
+  />
+));
+DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName;
+
+const DropdownMenuShortcut = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLSpanElement>) => {
+  return (
+    <span
+      className={cn("ml-auto text-xs tracking-widest opacity-60", className)}
+      {...props}
+    />
+  );
+};
+DropdownMenuShortcut.displayName = "DropdownMenuShortcut";
+
+export {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuRadioItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuGroup,
+  DropdownMenuPortal,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuRadioGroup,
+};
+
+
+/components/ui/input.tsx
+import * as React from "react";
+
+import { cn } from "@/lib/utils";
+
+export interface InputProps
+  extends React.InputHTMLAttributes<HTMLInputElement> {}
+
+const Input = React.forwardRef<HTMLInputElement, InputProps>(
+  ({ className, type, ...props }, ref) => {
+    return (
+      <input
+        type={type}
+        className={cn(
+          "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+          className,
+        )}
+        ref={ref}
+        {...props}
+      />
+    );
+  },
+);
+Input.displayName = "Input";
+
+export { Input };
+
+
+/components/ui/label.tsx
+"use client";
+
+import * as React from "react";
+import * as LabelPrimitive from "@radix-ui/react-label";
+import { cva, type VariantProps } from "class-variance-authority";
+
+import { cn } from "@/lib/utils";
+
+const labelVariants = cva(
+  "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
+);
+
+const Label = React.forwardRef<
+  React.ElementRef<typeof LabelPrimitive.Root>,
+  React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root> &
+    VariantProps<typeof labelVariants>
+>(({ className, ...props }, ref) => (
+  <LabelPrimitive.Root
+    ref={ref}
+    className={cn(labelVariants(), className)}
+    {...props}
+  />
+));
+Label.displayName = LabelPrimitive.Root.displayName;
+
+export { Label };
+

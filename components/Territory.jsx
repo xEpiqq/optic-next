@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from "react";
 import { createClient as createSupabaseClient } from "@/utils/supabase/client";
 import { createClient as createSupabaseAnonClient } from "@supabase/supabase-js";
 
-const ZOOM_THRESHOLD = 12;
 const DEFAULT_COLOR = "#FF0000";
 
 // If you are an ai rewriting this file make sure you write these hard-coded env variables back in full
@@ -33,8 +32,6 @@ export default function Territory({
   const [polygonCoordinates, setPolygonCoordinates] = useState([]);
 
   const territoryPolygonsRef = useRef([]);
-  const individualMarkersRef = useRef([]);
-  const zoomListenerRef = useRef(null);
   const drawingManagerRef = useRef(null);
   const drawnPolygonRef = useRef(null);
 
@@ -63,8 +60,11 @@ export default function Territory({
 
   // Manage when we’re in "draw" mode
   useEffect(() => {
-    if (isAdding && addMode === "draw") startDrawingMode();
-    else if (!isAdding) stopDrawingMode(false);
+    if (isAdding && addMode === "draw") {
+      startDrawingMode();
+    } else if (!isAdding) {
+      stopDrawingMode(false);
+    }
   }, [isAdding, addMode]);
 
   function polygonOptions(c, editable) {
@@ -76,18 +76,6 @@ export default function Territory({
       strokeWeight: 2,
       editable,
     };
-  }
-
-  function clearMarkers() {
-    individualMarkersRef.current.forEach((m) => m.setMap(null));
-    individualMarkersRef.current = [];
-  }
-
-  function removeZoomListener() {
-    if (zoomListenerRef.current) {
-      google.maps.event.removeListener(zoomListenerRef.current);
-      zoomListenerRef.current = null;
-    }
   }
 
   function clearTerritoryPolygons() {
@@ -131,8 +119,7 @@ export default function Territory({
                 border-top-color:transparent;
                 border-radius:50%;
                 animation:spin 1s linear infinite;
-                ">
-              </div>
+              "></div>
               <p style="font-size:0.8rem;margin-top:6px;">Loading...</p>
             </div>
           </div>
@@ -160,7 +147,7 @@ export default function Territory({
               <div style="min-width:200px;padding:8px;background:#fff;color:#000;border-radius:6px;">
                 <div style="font-weight:bold;margin-bottom:6px;">${t.name}</div>
                 <div style="margin-bottom:8px;">
-                  Total Restaurants: ${total}
+                  Total Leads: ${total}
                 </div>
               </div>
             `;
@@ -182,52 +169,6 @@ export default function Territory({
     });
   }
 
-  // Possibly fetch individual markers if zoom is high enough
-  async function fetchIndividualsForCurrentBounds(expansionFactor = 3) {
-    if (!map) return;
-    const bounds = map.getBounds();
-    if (!bounds) return;
-    const sw = bounds.getSouthWest();
-    const ne = bounds.getNorthEast();
-    const dLat = ne.lat() - sw.lat();
-    const dLng = ne.lng() - sw.lng();
-    const minLat = sw.lat() - dLat * (expansionFactor - 1);
-    const minLon = sw.lng() - dLng * (expansionFactor - 1);
-    const maxLat = ne.lat() + dLat * (expansionFactor - 1);
-    const maxLon = ne.lng() + dLng * (expansionFactor - 1);
-
-    try {
-      const res = await fetch(
-        `/api/restaurants?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}`
-      );
-      if (!res.ok) throw new Error("Failed to fetch individuals");
-      const { restaurants } = await res.json();
-      clearMarkers();
-      (restaurants || []).forEach((r) => {
-        const lat = parseFloat(r.latitude);
-        const lng = parseFloat(r.longitude);
-        if (!isNaN(lat) && !isNaN(lng)) {
-          individualMarkersRef.current.push(
-            new google.maps.Marker({ position: { lat, lng }, map })
-          );
-        }
-      });
-      removeZoomListener();
-      zoomListenerRef.current = google.maps.event.addListener(
-        map,
-        "zoom_changed",
-        () => {
-          if (map.getZoom() < ZOOM_THRESHOLD) {
-            clearMarkers();
-            removeZoomListener();
-          }
-        }
-      );
-    } catch (err) {
-      console.error("Error fetching individuals:", err);
-    }
-  }
-
   // Clicking territory name in sidebar => zoom to polygon
   function handleTerritoryClick(territory) {
     setSelectedTerritory(territory);
@@ -237,12 +178,6 @@ export default function Territory({
       bounds.extend({ lat, lng })
     );
     map.fitBounds(bounds);
-
-    google.maps.event.addListenerOnce(map, "idle", async () => {
-      const z = map.getZoom();
-      if (z >= ZOOM_THRESHOLD) await fetchIndividualsForCurrentBounds(3);
-      else clearMarkers();
-    });
   }
 
   // Cancel territory creation
@@ -439,6 +374,32 @@ export default function Territory({
     }
   }
 
+  // Delete territory
+  async function handleDeleteTerritory(territoryId) {
+    if (!territoryId) return;
+    const confirmDel = window.confirm(
+      "Are you sure you want to delete this territory?"
+    );
+    if (!confirmDel) return;
+
+    try {
+      const response = await fetch(`/api/territories?id=${territoryId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to delete territory");
+      }
+      setDisplayTerritories((prev) =>
+        prev.filter((t) => t.id !== territoryId)
+      );
+      setSelectedTerritory(null);
+      alert("Territory deleted successfully.");
+    } catch (err) {
+      console.error("Error deleting territory:", err);
+      alert("Error deleting territory. " + err.message);
+    }
+  }
+
   // Filter by territory name
   const filteredTerritories = displayTerritories.filter((t) =>
     t.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -508,6 +469,17 @@ export default function Territory({
                   <p className="text-sm text-gray-400">
                     Stats and other info about this territory.
                   </p>
+                </div>
+                {/* Delete button */}
+                <div>
+                  <button
+                    onClick={() =>
+                      handleDeleteTerritory(selectedTerritory.id)
+                    }
+                    className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-500"
+                  >
+                    Delete Territory
+                  </button>
                 </div>
               </div>
             ) : isAdding ? (
@@ -606,8 +578,7 @@ export default function Territory({
                       onToggle && onToggle(true);
                       setIsAdding(true);
                       setSelectedTerritory(null);
-                      clearMarkers();
-                      removeZoomListener();
+                      // No more marker clearing, removed logic
                       setAddMode("draw");
                       setColor(DEFAULT_COLOR);
                     }}
@@ -632,8 +603,6 @@ export default function Territory({
                         key={territory.id}
                         className="flex items-center justify-between p-2 bg-gray-800 rounded cursor-pointer hover:bg-gray-700"
                         onClick={() => {
-                          clearMarkers();
-                          removeZoomListener();
                           handleTerritoryClick(territory);
                         }}
                       >
