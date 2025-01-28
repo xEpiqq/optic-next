@@ -3,7 +3,7 @@
 const Example = ({ children }) => {
 
   return (
-    <div>
+    <div className="w-full h-full">
       {children}
     </div>
   );
