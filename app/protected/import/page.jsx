@@ -158,7 +158,7 @@ export default function Page() {
         </svg>
 
         <h3 className="mt-2 text-sm font-semibold text-gray-300">
-          Import Restaurants
+          Import Leads
         </h3>
         <p className="mt-1 text-sm text-gray-400">
           Select a CSV file from your device

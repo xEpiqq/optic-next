@@ -35,6 +35,14 @@ export default function Territory({
   const drawingManagerRef = useRef(null);
   const drawnPolygonRef = useRef(null);
 
+  // For manager assignment
+  const [allManagers, setAllManagers] = useState([]);
+  // For territory creation
+  const [selectedManagers, setSelectedManagers] = useState([]);
+  // For assigning managers to an existing territory
+  const [assignManagers, setAssignManagers] = useState([]);
+  const [showManagerAssignUI, setShowManagerAssignUI] = useState(false);
+
   // Keep local copy of the territories
   useEffect(() => setDisplayTerritories(territories), [territories]);
 
@@ -66,6 +74,27 @@ export default function Territory({
       stopDrawingMode(false);
     }
   }, [isAdding, addMode]);
+
+  // Load **all** profiles (no more filtering by user_type)
+  useEffect(() => {
+    const fetchManagers = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("user_id, first_name, last_name, user_type");
+
+        if (error) {
+          console.error("Failed to fetch managers:", error);
+          return;
+        }
+        // Just store them all in allManagers
+        setAllManagers(data || []);
+      } catch (err) {
+        console.error("Error loading managers:", err);
+      }
+    };
+    fetchManagers();
+  }, [supabase]);
 
   function polygonOptions(c, editable) {
     return {
@@ -103,66 +132,18 @@ export default function Territory({
         map,
       });
 
-      // On polygon click: show popup immediately, then fetch total
+      // On polygon click: show territory name in a simple window
       polygon.addListener("click", (event) => {
         territoryClickInfoWindow.close();
-
-        // 1) Show the territory name + spinner right away
-        const instantHtml = `
+        const detailsHtml = `
           <div style="min-width:200px;padding:8px;background:#fff;color:#000;border-radius:6px;">
             <div style="font-weight:bold;margin-bottom:6px;">${t.name}</div>
-            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
-              <div style="
-                width:24px;
-                height:24px;
-                border:3px solid #999;
-                border-top-color:transparent;
-                border-radius:50%;
-                animation:spin 1s linear infinite;
-              "></div>
-              <p style="font-size:0.8rem;margin-top:6px;">Loading...</p>
-            </div>
+            <p style="margin:0;">Color: ${t.color}</p>
           </div>
         `;
-        territoryClickInfoWindow.setContent(instantHtml);
+        territoryClickInfoWindow.setContent(detailsHtml);
         territoryClickInfoWindow.setPosition(event.latLng);
         territoryClickInfoWindow.open({ map });
-
-        // 2) Kick off fetch in background
-        (async () => {
-          try {
-            const res = await fetch("/api/territoryStats", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ coordinates: coords }),
-            });
-            let total = 0;
-            if (res.ok) {
-              const json = await res.json();
-              total = json.total || 0;
-            }
-
-            // 3) Once data arrives, update the popup content
-            const finalHtml = `
-              <div style="min-width:200px;padding:8px;background:#fff;color:#000;border-radius:6px;">
-                <div style="font-weight:bold;margin-bottom:6px;">${t.name}</div>
-                <div style="margin-bottom:8px;">
-                  Total Leads: ${total}
-                </div>
-              </div>
-            `;
-            // Update InfoWindow
-            territoryClickInfoWindow.setContent(finalHtml);
-          } catch (err) {
-            console.error("Error fetching territory stats:", err);
-            territoryClickInfoWindow.setContent(`
-              <div style="min-width:200px;padding:8px;background:#fff;color:#000;border-radius:6px;">
-                <div style="font-weight:bold;margin-bottom:6px;">${t.name}</div>
-                <div style="color:red;">Failed to load data.</div>
-              </div>
-            `);
-          }
-        })();
       });
 
       territoryPolygonsRef.current.push(polygon);
@@ -172,6 +153,7 @@ export default function Territory({
   // Clicking territory name in sidebar => zoom to polygon
   function handleTerritoryClick(territory) {
     setSelectedTerritory(territory);
+    setShowManagerAssignUI(false);
     if (!map || !territory.geom || !territory.geom.coordinates) return;
     const bounds = new google.maps.LatLngBounds();
     territory.geom.coordinates[0].forEach(([lng, lat]) =>
@@ -187,6 +169,7 @@ export default function Territory({
     setTerritoryName("");
     setColor(DEFAULT_COLOR);
     setZipCodeQuery("");
+    setSelectedManagers([]);
     stopDrawingMode(true);
   }
 
@@ -218,10 +201,8 @@ export default function Territory({
         name: territoryName,
         color,
         coordinates: polygonCoordinates,
+        managers: selectedManagers, // multi-select choice
       };
-      if (addMode === "zip" && zipCodeQuery.trim()) {
-        body.zipCode = zipCodeQuery.trim();
-      }
 
       const res = await fetch("/api/saveTerritory", {
         method: "POST",
@@ -233,26 +214,26 @@ export default function Territory({
         const data = await res.json();
         console.error("Failed to save territory:", data);
         alert("Failed to save territory.");
-        setDisplayTerritories((prev) =>
-          prev.filter((t) => t.id !== newTempId)
-        );
+        setDisplayTerritories((prev) => prev.filter((t) => t.id !== newTempId));
         return;
       }
 
-      const { data } = await res.json();
-      if (data && data.length > 0) {
-        const finalTerritory = data[0];
+      const { data: insertedRows, message } = await res.json();
+      alert(message || "Territory saved successfully.");
+
+      // If the route returned newly inserted territory, replace the temp
+      if (Array.isArray(insertedRows) && insertedRows.length > 0) {
+        const final = insertedRows[0];
         setDisplayTerritories((prev) =>
-          prev.map((t) => (t.id === newTempId ? finalTerritory : t))
+          prev.map((t) => (t.id === newTempId ? final : t))
         );
-        setSelectedTerritory(finalTerritory);
+        setSelectedTerritory(final);
         if (drawnPolygonRef.current) {
           drawnPolygonRef.current.setMap(null);
           drawnPolygonRef.current = null;
         }
       }
 
-      alert("Territory saved successfully.");
       setIsAdding(false);
       setPolygonCoordinates([]);
       stopDrawingMode(true);
@@ -389,14 +370,46 @@ export default function Territory({
       if (!response.ok) {
         throw new Error("Failed to delete territory");
       }
-      setDisplayTerritories((prev) =>
-        prev.filter((t) => t.id !== territoryId)
-      );
+      setDisplayTerritories((prev) => prev.filter((t) => t.id !== territoryId));
       setSelectedTerritory(null);
       alert("Territory deleted successfully.");
     } catch (err) {
       console.error("Error deleting territory:", err);
       alert("Error deleting territory. " + err.message);
+    }
+  }
+
+  // Assign managers to territory using new route
+  async function handleAssignManagersToTerritory() {
+    if (!selectedTerritory || !selectedTerritory.id) {
+      alert("No territory selected.");
+      return;
+    }
+    if (assignManagers.length === 0) {
+      alert("Please select one or more managers.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/assignTerritoryManagers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          territoryId: selectedTerritory.id,
+          managers: assignManagers,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        console.error("Failed to assign managers:", data);
+        alert("Failed to assign managers.");
+        return;
+      }
+      const data = await res.json();
+      alert(data.message || "Managers assigned successfully.");
+      setShowManagerAssignUI(false);
+    } catch (err) {
+      console.error("Error assigning managers:", err);
+      alert("Error assigning managers. Check console.");
     }
   }
 
@@ -470,6 +483,7 @@ export default function Territory({
                     Stats and other info about this territory.
                   </p>
                 </div>
+
                 {/* Delete button */}
                 <div>
                   <button
@@ -480,6 +494,65 @@ export default function Territory({
                   >
                     Delete Territory
                   </button>
+                </div>
+
+                {/* Assign managers to territory */}
+                <div className="space-y-3">
+                  {!showManagerAssignUI ? (
+                    <button
+                      onClick={() => {
+                        setShowManagerAssignUI(true);
+                        setAssignManagers([]);
+                      }}
+                      className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-500"
+                    >
+                      Assign Managers
+                    </button>
+                  ) : (
+                    <div className="border border-gray-600 p-3 rounded">
+                      <label className="block text-sm font-medium text-gray-300 mb-1">
+                        Select Managers
+                      </label>
+                      <select
+                        multiple
+                        value={assignManagers}
+                        onChange={(e) => {
+                          // Collect selected options
+                          const selected = Array.from(
+                            e.target.selectedOptions
+                          ).map((opt) => opt.value);
+                          setAssignManagers(selected);
+                        }}
+                        className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-md"
+                      >
+                        {allManagers.map((mgr) => {
+                          const fullName = mgr.first_name
+                            ? mgr.first_name + " " + (mgr.last_name || "")
+                            : mgr.user_id;
+                          return (
+                            <option key={mgr.user_id} value={mgr.user_id}>
+                              {fullName}
+                            </option>
+                          );
+                        })}
+                      </select>
+
+                      <div className="flex justify-end space-x-2 mt-2">
+                        <button
+                          onClick={() => setShowManagerAssignUI(false)}
+                          className="px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleAssignManagersToTerritory}
+                          className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-500"
+                        >
+                          Assign
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : isAdding ? (
@@ -554,6 +627,35 @@ export default function Territory({
                   </div>
                 )}
 
+                {/* Multi-select for managers when creating a new territory */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Select Managers (Optional)
+                  </label>
+                  <select
+                    multiple
+                    value={selectedManagers}
+                    onChange={(e) => {
+                      const sel = Array.from(e.target.selectedOptions).map(
+                        (o) => o.value
+                      );
+                      setSelectedManagers(sel);
+                    }}
+                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-md"
+                  >
+                    {allManagers.map((mgr) => {
+                      const name = mgr.first_name
+                        ? mgr.first_name + " " + (mgr.last_name || "")
+                        : mgr.user_id;
+                      return (
+                        <option key={mgr.user_id} value={mgr.user_id}>
+                          {name}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
                 <div className="flex justify-end space-x-2">
                   <button
                     onClick={cancelAdd}
@@ -578,7 +680,6 @@ export default function Territory({
                       onToggle && onToggle(true);
                       setIsAdding(true);
                       setSelectedTerritory(null);
-                      // No more marker clearing, removed logic
                       setAddMode("draw");
                       setColor(DEFAULT_COLOR);
                     }}
@@ -622,6 +723,27 @@ export default function Territory({
               </div>
             )}
           </div>
+
+          <style jsx>{`
+            @keyframes spin {
+              to {
+                transform: rotate(360deg);
+              }
+            }
+            .scroll-container::-webkit-scrollbar {
+              width: 6px;
+            }
+            .scroll-container::-webkit-scrollbar-track {
+              background: #1f2937;
+            }
+            .scroll-container::-webkit-scrollbar-thumb {
+              background: #374151;
+              border-radius: 3px;
+            }
+            .scroll-container:hover::-webkit-scrollbar-thumb {
+              background: #4b5563;
+            }
+          `}</style>
         </>
       ) : (
         <div
@@ -639,28 +761,6 @@ export default function Territory({
           <span className="ml-2 text-sm">Territory</span>
         </div>
       )}
-
-      {/* A quick inline style for the spinner animation */}
-      <style jsx>{`
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-        .scroll-container::-webkit-scrollbar {
-          width: 6px;
-        }
-        .scroll-container::-webkit-scrollbar-track {
-          background: #1f2937;
-        }
-        .scroll-container::-webkit-scrollbar-thumb {
-          background: #374151;
-          border-radius: 3px;
-        }
-        .scroll-container:hover::-webkit-scrollbar-thumb {
-          background: #4b5563;
-        }
-      `}</style>
     </div>
   );
 }
