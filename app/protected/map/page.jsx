@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabaseClient';
 import MapPage from './MapPage';
+export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const initialZoomLevel = 5;

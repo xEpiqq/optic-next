@@ -1,4 +1,6 @@
 "use client";
+export const dynamic = "force-dynamic";
+
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import Toolbar from "@/components/Toolbar";
