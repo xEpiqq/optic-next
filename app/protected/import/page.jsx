@@ -12,16 +12,11 @@ export default function Page() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
 
-  // Commented out so it can't be used.
-  /*
   const handleFileUpload = (e) => {
     setFile(e.target.files[0]);
     setUploadMessage("");
   };
-  */
 
-  // Commented out so it can't be used.
-  /*
   const startUpload = async () => {
     if (!file) return;
     setIsProcessing(true);
@@ -54,9 +49,7 @@ export default function Page() {
       setIsProcessing(false);
     }
   };
-  */
 
-  // Kept here, but not currently used due to comments above.
   const readFileAsText = (file) =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -65,7 +58,6 @@ export default function Page() {
       reader.readAsText(file);
     });
 
-  // Kept here, but not currently used due to comments above.
   const parseCSV = (csv) => {
     const lines = csv.trim().split("\n");
     const headers = lines[0].split(",").map((h) => h.trim().toUpperCase());
@@ -85,7 +77,6 @@ export default function Page() {
       .filter((row) => row.address && row.city && row.state && row.zip5);
   };
 
-  // Kept here, but not currently used due to comments above.
   const processBatch = async (batch) => {
     let success = 0;
     let failure = 0;
@@ -114,7 +105,6 @@ export default function Page() {
     return { success, failure };
   };
 
-  // Kept here, but not currently used due to comments above.
   const geocodeAddress = async ({ address, city, state, zip5, zip9 }) => {
     const fullAddress = `${address}, ${city}, ${state} ${zip5}, USA`;
     const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
@@ -146,11 +136,11 @@ export default function Page() {
     }
   };
 
-  // Kept here, but not currently used due to comments above.
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-900">
+      {/* Example: <Sidebar /> if you have one */}
       <div className="text-center flex flex-col">
         <svg
           className="mx-auto h-12 w-12 text-gray-400"
@@ -170,13 +160,10 @@ export default function Page() {
         <h3 className="mt-2 text-sm font-semibold text-gray-300">
           Import Leads
         </h3>
-        
-        {/* Display the 'Under construction...' message */}
         <p className="mt-1 text-sm text-gray-400">
-          Under construction... this page will be back soon
+          Select a CSV file from your device
         </p>
 
-        {/* 
         <div className="mt-6">
           <label
             htmlFor="file-upload"
@@ -191,20 +178,18 @@ export default function Page() {
               type="file"
               accept=".csv"
               className="sr-only"
-              // onChange={handleFileUpload} // Commented out to disable
+              onChange={handleFileUpload}
             />
           </label>
         </div>
-        */}
 
-        {/* 
         {file && (
           <>
             <p className="mt-2 text-sm text-gray-500">{file.name}</p>
             <button
               className="mt-6 bg-blue-600 text-white py-2 px-4 rounded flex justify-center items-center disabled:opacity-50"
-              // onClick={startUpload} // Commented out to disable
-              disabled={true}
+              onClick={startUpload}
+              disabled={isProcessing}
             >
               {isProcessing && (
                 <svg className="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">
@@ -227,7 +212,6 @@ export default function Page() {
             </button>
           </>
         )}
-        */}
 
         {uploadMessage && (
           <p className="mt-4 text-sm text-gray-400">{uploadMessage}</p>
